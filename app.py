@@ -10,6 +10,11 @@ CORS(app)  # Enable CORS for frontend-backend communication
 # Database setup
 DATABASE = 'auto_shop.db'
 
+ALL_TIME_SLOTS = [
+    '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+    '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'
+]
+
 def get_db_connection():
     """Create a database connection"""
     conn = sqlite3.connect(DATABASE)
@@ -80,6 +85,13 @@ def init_db():
     
     conn.close()
     print("Database initialized successfully!")
+
+
+def resolve_target_date(raw_date):
+    """Use requested date when provided, otherwise default to today's date."""
+    if raw_date:
+        return raw_date
+    return datetime.now().strftime('%Y-%m-%d')
 
 
 # ============================================
@@ -338,19 +350,7 @@ def get_mechanic_bookings(mechanic_id):
 @app.route('/api/timeslots', methods=['GET'])
 def get_available_slots():
     """Get available time slots for a specific date"""
-    date = request.args.get('date')
-    
-    if not date:
-        return jsonify({
-            'success': False,
-            'error': 'Date parameter required'
-        }), 400
-    
-    # Define all possible time slots
-    all_slots = [
-        '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
-        '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'
-    ]
+    date = resolve_target_date(request.args.get('date'))
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -366,7 +366,7 @@ def get_available_slots():
     
     # Build response with availability
     slots = []
-    for slot in all_slots:
+    for slot in ALL_TIME_SLOTS:
         slots.append({
             'time': slot,
             'available': slot not in booked_slots
@@ -386,7 +386,7 @@ def get_available_slots():
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     """Get statistics for dashboard"""
-    date = request.args.get('date')
+    date = resolve_target_date(request.args.get('date'))
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -424,6 +424,65 @@ def get_stats():
     })
 
 
+@app.route('/api/dashboard', methods=['GET'])
+def get_dashboard_data():
+    """Get bookings, stats, and time slot availability in one request."""
+    date = resolve_target_date(request.args.get('date'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT * FROM bookings
+        WHERE booking_date = ?
+        ORDER BY time_slot ASC
+    ''', (date,))
+    bookings = [dict(row) for row in cursor.fetchall()]
+
+    cursor.execute('''
+        SELECT COUNT(*) as count FROM bookings
+        WHERE booking_date = ? AND status != 'cancelled'
+    ''', (date,))
+    today_total = cursor.fetchone()['count']
+
+    cursor.execute('''
+        SELECT COUNT(*) as count FROM bookings
+        WHERE booking_date = ? AND status = 'pending'
+    ''', (date,))
+    pending = cursor.fetchone()['count']
+
+    cursor.execute('''
+        SELECT COUNT(*) as count FROM bookings
+        WHERE booking_date = ? AND status = 'completed'
+    ''', (date,))
+    completed = cursor.fetchone()['count']
+
+    cursor.execute('''
+        SELECT time_slot FROM bookings
+        WHERE booking_date = ? AND status != 'cancelled'
+    ''', (date,))
+    booked_slots = {row['time_slot'] for row in cursor.fetchall()}
+
+    conn.close()
+
+    slots = [
+        {'time': slot, 'available': slot not in booked_slots}
+        for slot in ALL_TIME_SLOTS
+    ]
+
+    return jsonify({
+        'success': True,
+        'date': date,
+        'bookings': bookings,
+        'stats': {
+            'today_total': today_total,
+            'pending': pending,
+            'completed': completed
+        },
+        'slots': slots
+    })
+
+
 # ============================================
 # HELPER ENDPOINTS
 # ============================================
@@ -452,8 +511,9 @@ def home():
             'DELETE /api/bookings/:id': 'Cancel booking',
             'GET /api/mechanics': 'Get all mechanics',
             'GET /api/mechanics/:id/bookings': 'Get mechanic bookings',
-            'GET /api/timeslots': 'Get available slots (required: ?date=YYYY-MM-DD)',
+            'GET /api/timeslots': 'Get available slots (optional: ?date=YYYY-MM-DD)',
             'GET /api/stats': 'Get statistics (optional: ?date=YYYY-MM-DD)',
+            'GET /api/dashboard': 'Get bookings, stats, and slots for one date (optional: ?date=YYYY-MM-DD)',
             'GET /api/health': 'Health check'
         }
     })

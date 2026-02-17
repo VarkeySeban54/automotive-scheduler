@@ -102,6 +102,7 @@ GET /api/mechanics/mike/bookings?date=2024-03-15
 **Get available time slots**
 ```http
 GET /api/timeslots?date=2024-03-15
+GET /api/timeslots   # defaults to today if date is omitted
 ```
 
 Returns:
@@ -122,6 +123,7 @@ Returns:
 **Get dashboard stats**
 ```http
 GET /api/stats?date=2024-03-15
+GET /api/stats   # defaults to today if date is omitted
 ```
 
 Returns:
@@ -133,6 +135,32 @@ Returns:
     "pending": 3,
     "completed": 2
   }
+}
+```
+
+
+### Dashboard
+
+**Get bookings + stats + slot availability in one request**
+```http
+GET /api/dashboard?date=2024-03-15
+GET /api/dashboard   # defaults to today if date is omitted
+```
+
+Returns:
+```json
+{
+  "success": true,
+  "date": "2024-03-15",
+  "bookings": [...],
+  "stats": {
+    "today_total": 5,
+    "pending": 3,
+    "completed": 2
+  },
+  "slots": [
+    {"time": "8:00 AM", "available": true}
+  ]
 }
 ```
 
@@ -185,12 +213,12 @@ async function createBooking(bookingData) {
     return result;
 }
 
-// Example: Get today's bookings
-async function getTodayBookings() {
+// Example: Get all dashboard data in one request
+async function getDashboardData() {
     const today = new Date().toISOString().split('T')[0];
-    const response = await fetch(`http://localhost:5000/api/bookings?date=${today}`);
+    const response = await fetch(`http://localhost:5000/api/dashboard?date=${today}`);
     const result = await response.json();
-    return result.bookings;
+    return result;
 }
 ```
 
