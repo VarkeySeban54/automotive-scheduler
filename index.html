@@ -6,13 +6,13 @@
     <title>Auto Shop Admin Panel</title>
     <style>
         :root {
-            --bg: #f4f7fb;
+            --bg: #0a0b0f;
             --surface: #ffffff;
             --surface-muted: #f8fafc;
             --text: #1f2937;
             --text-soft: #64748b;
-            --brand: #2563eb;
-            --brand-dark: #1d4ed8;
+            --brand: #f5cc1f;
+            --brand-dark: #e0b705;
             --border: #dbe4f0;
             --danger: #dc2626;
             --danger-soft: #fee2e2;
@@ -32,37 +32,75 @@
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: radial-gradient(circle at top right, #e9f0ff, var(--bg) 30%);
+            background:
+                radial-gradient(circle at 15% 25%, rgba(245, 204, 31, 0.08), transparent 30%),
+                radial-gradient(circle at 90% 75%, rgba(245, 204, 31, 0.06), transparent 36%),
+                #08090b;
             color: var(--text);
             min-height: 100vh;
-            overflow: hidden;
+            overflow-x: hidden;
         }
 
-        .navbar {
-            background: linear-gradient(110deg, #0f172a, #1e293b);
-            color: white;
-            padding: 16px 28px;
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        }
+
+        .brand-strip {
+            background: #ffffff;
+            color: #0f172a;
+            padding: 18px 28px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+            border-bottom: 1px solid #f1f5f9;
         }
 
-        .navbar h1 {
-            font-size: 1.45rem;
-            letter-spacing: 0.2px;
+        .brand-strip h1 {
+            font-size: 2rem;
+            letter-spacing: 0.3px;
+        }
+
+        .brand-strip h1 .accent {
+            color: var(--brand-dark);
+        }
+
+        .navbar {
+            background: var(--brand);
+            color: #0f172a;
+            padding: 14px 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .primary-links {
+            display: flex;
+            gap: 18px;
+            flex-wrap: wrap;
+            font-weight: 600;
+            font-size: 0.98rem;
+        }
+
+        .primary-links span {
+            cursor: default;
         }
 
         .navbar .user-info {
             display: flex;
             align-items: center;
             gap: 14px;
-            color: #dbeafe;
+            color: #1f2937;
+            font-weight: 600;
         }
 
         .view-toggle {
-            background: rgba(255, 255, 255, 0.15);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: #111827;
+            color: white;
+            border: 1px solid #111827;
             padding: 10px 16px;
             border-radius: 999px;
             cursor: pointer;
@@ -70,13 +108,13 @@
         }
 
         .view-toggle:hover {
-            background: rgba(255, 255, 255, 0.24);
+            background: #000000;
             transform: translateY(-1px);
         }
 
         .main-container {
             display: flex;
-            height: calc(100vh - 74px);
+            height: calc(100vh - 146px);
             gap: 22px;
             padding: 22px;
         }
@@ -95,6 +133,34 @@
             flex: 1;
             padding: 0;
             overflow-y: auto;
+        }
+
+        .hero-copy {
+            background: linear-gradient(110deg, rgba(8, 9, 11, 0.94), rgba(8, 9, 11, 0.75));
+            border: 1px solid rgba(245, 204, 31, 0.35);
+            border-radius: 16px;
+            color: #f8fafc;
+            padding: 26px;
+            margin-bottom: 18px;
+        }
+
+        .hero-copy h2 {
+            color: #f8fafc;
+            font-size: clamp(1.6rem, 3vw, 2.4rem);
+            line-height: 1.25;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .hero-copy h2 .highlight {
+            color: var(--brand);
+        }
+
+        .hero-copy p {
+            color: #e2e8f0;
+            max-width: 68ch;
+            line-height: 1.6;
         }
 
         h2 {
@@ -143,7 +209,7 @@
             width: 100%;
             padding: 13px;
             background: linear-gradient(135deg, var(--brand), var(--brand-dark));
-            color: white;
+            color: #111827;
             border: none;
             border-radius: 10px;
             font-size: 0.96rem;
@@ -240,7 +306,7 @@
         
         .time-slot.selected {
             background: linear-gradient(135deg, var(--brand), var(--brand-dark));
-            color: white;
+            color: #111827;
             border-color: var(--brand-dark);
         }
         
@@ -388,8 +454,8 @@
         .service-type-tag {
             display: inline-block;
             padding: 4px 10px;
-            background: #eff6ff;
-            color: #1d4ed8;
+            background: #fef3c7;
+            color: #78350f;
             border-radius: 999px;
             font-size: 0.85em;
             margin-right: 5px;
@@ -462,6 +528,12 @@
                 overflow-y: auto;
             }
 
+            .brand-strip,
+            .navbar {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
             .booking-panel {
                 width: 100%;
             }
@@ -476,11 +548,26 @@
                 overflow-y: auto;
             }
 
+            .brand-strip {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .brand-strip h1 {
+                font-size: 1.5rem;
+            }
+
             .navbar {
-                padding: 14px 16px;
+                padding: 12px 16px;
                 flex-direction: column;
                 gap: 12px;
                 align-items: flex-start;
+            }
+
+            .primary-links {
+                font-size: 0.9rem;
+                gap: 12px;
             }
 
             .navbar .user-info {
@@ -517,15 +604,28 @@
     </style>
 </head>
 <body>
-    <div class="navbar">
-        <h1>🔧 Auto Shop Admin Panel</h1>
-        <div class="user-info">
-            <div class="view-toggle" onclick="toggleView()">
-                <span id="viewToggleText">Switch to Mechanic View</span>
-            </div>
-            <div>Admin: John Smith</div>
+    <header class="site-header">
+        <div class="brand-strip">
+            <h1>Marvel Auto <span class="accent">London</span></h1>
+            <div>Trusted Workshop Dashboard</div>
         </div>
-    </div>
+        <div class="navbar">
+            <div class="primary-links">
+                <span>Home</span>
+                <span>Services</span>
+                <span>About Us</span>
+                <span>Gallery</span>
+                <span>Payment &amp; Service History</span>
+                <span>Contact Us</span>
+            </div>
+            <div class="user-info">
+                <div class="view-toggle" onclick="toggleView()">
+                    <span id="viewToggleText">Switch to Mechanic View</span>
+                </div>
+                <div>Admin: John Smith</div>
+            </div>
+        </div>
+    </header>
     
     <!-- ADMIN VIEW -->
     <div class="main-container admin-view active">
@@ -597,6 +697,10 @@
         </div>
         
         <div class="calendar-section">
+            <section class="hero-copy">
+                <h2>Reliable Auto Repair You Can <span class="highlight">Trust</span></h2>
+                <p>Keep every customer moving with fast diagnostics, transparent pricing, and high-quality service outcomes.</p>
+            </section>
             <div class="calendar">
                 <div class="calendar-header">
                     <h3 id="currentDate">Today</h3>
