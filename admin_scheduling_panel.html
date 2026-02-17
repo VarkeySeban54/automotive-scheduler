@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marvel Auto Admin Panel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .navbar {
+            background: #2c3e50;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .navbar h1 {
+            font-size: 1.5em;
+        }
+        
+        .navbar .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .view-toggle {
+            background: #34495e;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .view-toggle:hover {
+            background: #415566;
+        }
+        
+        .main-container {
+            display: flex;
+            height: calc(100vh - 60px);
+        }
+        
+        .booking-panel {
+            width: 400px;
+            background: white;
+            padding: 25px;
+            overflow-y: auto;
+            border-right: 1px solid #e0e0e0;
+        }
+        
+        .calendar-section {
+            flex: 1;
+            padding: 25px;
+            overflow-y: auto;
+        }
+        
+        h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+            font-size: 0.95em;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: #2980b9;
+        }
+        
+        .btn-secondary {
+            background: #95a5a6;
+            margin-top: 10px;
+        }
+        
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+        
+        .calendar {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        
+        .calendar-header h3 {
+            color: #2c3e50;
+            font-size: 1.4em;
+        }
+        
+        .calendar-nav {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .calendar-nav button {
+            padding: 8px 16px;
+            background: #ecf0f1;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.3s;
+        }
+        
+        .calendar-nav button:hover {
+            background: #bdc3c7;
+        }
+        
+        .time-slots {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .time-slot {
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: white;
+        }
+        
+        .time-slot:hover {
+            border-color: #3498db;
+            transform: translateY(-2px);
+        }
+        
+        .time-slot.selected {
+            background: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+        
+        .time-slot.booked {
+            background: #e74c3c;
+            color: white;
+            border-color: #e74c3c;
+            cursor: not-allowed;
+        }
+        
+        .time-slot.booked:hover {
+            transform: none;
+        }
+        
+        .time-slot .time {
+            font-weight: 600;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+        
+        .time-slot .status {
+            font-size: 0.85em;
+            opacity: 0.9;
+        }
+        
+        .bookings-list {
+            margin-top: 30px;
+        }
+        
+        .booking-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border-left: 4px solid #3498db;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        
+        .booking-card.urgent {
+            border-left-color: #e74c3c;
+        }
+        
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+        
+        .booking-time {
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 1.1em;
+        }
+        
+        .booking-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .badge-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .badge-confirmed {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge-completed {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .booking-details {
+            color: #555;
+            line-height: 1.6;
+        }
+        
+        .booking-details p {
+            margin: 5px 0;
+        }
+        
+        .booking-details strong {
+            color: #2c3e50;
+        }
+        
+        .mechanic-view {
+            display: none;
+        }
+        
+        .mechanic-view.active {
+            display: block;
+        }
+        
+        .admin-view.active {
+            display: flex;
+        }
+        
+        .admin-view {
+            display: none;
+        }
+        
+        .mechanic-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        
+        .stats-bar {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: 700;
+            color: #3498db;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        
+        .service-type-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            background: #e8f4f8;
+            color: #2980b9;
+            border-radius: 12px;
+            font-size: 0.85em;
+            margin-right: 5px;
+            margin-top: 5px;
+        }
+        
+        .quick-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .quick-btn {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .quick-btn.complete {
+            background: #2ecc71;
+            color: white;
+        }
+        
+        .quick-btn.complete:hover {
+            background: #27ae60;
+        }
+        
+        .quick-btn.cancel {
+            background: #ecf0f1;
+            color: #555;
+        }
+        
+        .quick-btn.cancel:hover {
+            background: #bdc3c7;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>🔧 Marvel Auto Admin Panel</h1>
+        <div class="user-info">
+            <div class="view-toggle" onclick="toggleView()">
+                <span id="viewToggleText">Switch to Mechanic View</span>
+            </div>
+            <div>Admin: John Smith</div>
+        </div>
+    </div>
+    
+    <!-- ADMIN VIEW -->
+    <div class="main-container admin-view active">
+        <div class="booking-panel">
+            <h2>📞 New Booking</h2>
+            <form id="bookingForm">
+                <div class="form-group">
+                    <label>Customer Name *</label>
+                    <input type="text" id="customerName" placeholder="John Doe" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Phone Number *</label>
+                    <input type="tel" id="customerPhone" placeholder="(555) 123-4567" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Vehicle *</label>
+                    <input type="text" id="vehicle" placeholder="2020 Toyota Camry" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Service Type *</label>
+                    <select id="serviceType" required>
+                        <option value="">Select service...</option>
+                        <option value="oil-change">Oil Change</option>
+                        <option value="brake-service">Brake Service</option>
+                        <option value="tire-rotation">Tire Rotation</option>
+                        <option value="engine-diagnostic">Engine Diagnostic</option>
+                        <option value="transmission">Transmission Service</option>
+                        <option value="inspection">General Inspection</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Assigned Mechanic</label>
+                    <select id="mechanic">
+                        <option value="ajith">Ajith Mathew</option>
+                        <option value="alwin">Alwin Antony</option>
+                        <option value="varghese">Varghese Sebastian</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Issue Description</label>
+                    <textarea id="description" placeholder="Customer reports strange noise when braking..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>Selected Time Slot</label>
+                    <input type="text" id="selectedSlot" readonly placeholder="Select from calendar">
+                </div>
+                
+                <button type="submit" class="btn">📅 Book Appointment</button>
+                <button type="reset" class="btn btn-secondary">Clear Form</button>
+            </form>
+        </div>
+        
+        <div class="calendar-section">
+            <div class="calendar">
+                <div class="calendar-header">
+                    <h3 id="currentDate">Today - March 15, 2024</h3>
+                    <div class="calendar-nav">
+                        <button onclick="changeDate(-1)">← Previous Day</button>
+                        <button onclick="changeDate(0)">Today</button>
+                        <button onclick="changeDate(1)">Next Day →</button>
+                    </div>
+                </div>
+                
+                <div class="time-slots" id="timeSlots">
+                    <!-- Time slots will be generated here -->
+                </div>
+            </div>
+            
+            <div class="bookings-list">
+                <h2>📋 Today's Appointments</h2>
+                <div id="bookingsList">
+                    <!-- Bookings will appear here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MECHANIC VIEW -->
+    <div class="main-container mechanic-view">
+        <div style="flex: 1; padding: 25px; overflow-y: auto;">
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <div class="stat-number" id="todayCount">0</div>
+                    <div class="stat-label">Today's Jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="pendingCount">0</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="completedCount">0</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+            </div>
+            
+            <h2>🔧 My Schedule</h2>
+            <div class="mechanic-cards" id="mechanicCards">
+                <!-- Mechanic job cards will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Generate time slots for the day
+        function generateTimeSlots() {
+            const container = document.getElementById('timeSlots');
+            container.innerHTML = '';
+            
+            const hours = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', 
+                          '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'];
+            
+            hours.forEach(time => {
+                const slot = document.createElement('div');
+                slot.className = 'time-slot';
+                slot.innerHTML = `
+                    <div class="time">${time}</div>
+                    <div class="status">Available</div>
+                `;
+                slot.onclick = () => selectTimeSlot(time, slot);
+                container.appendChild(slot);
+            });
+        }
+        
+        let selectedSlot = null;
+        let bookings = [];
+        
+        function selectTimeSlot(time, element) {
+            if (element.classList.contains('booked')) return;
+            
+            // Remove previous selection
+            if (selectedSlot) {
+                selectedSlot.classList.remove('selected');
+            }
+            
+            // Select new slot
+            element.classList.add('selected');
+            selectedSlot = element;
+            document.getElementById('selectedSlot').value = time;
+        }
+        
+        // Handle form submission
+        document.getElementById('bookingForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const booking = {
+                id: Date.now(),
+                customerName: document.getElementById('customerName').value,
+                phone: document.getElementById('customerPhone').value,
+                vehicle: document.getElementById('vehicle').value,
+                serviceType: document.getElementById('serviceType').value,
+                mechanic: document.getElementById('mechanic').value,
+                description: document.getElementById('description').value,
+                timeSlot: document.getElementById('selectedSlot').value,
+                status: 'pending',
+                date: new Date().toLocaleDateString()
+            };
+            
+            if (!booking.timeSlot) {
+                alert('Please select a time slot from the calendar');
+                return;
+            }
+            
+            bookings.push(booking);
+            
+            // Mark slot as booked
+            if (selectedSlot) {
+                selectedSlot.classList.remove('selected');
+                selectedSlot.classList.add('booked');
+                selectedSlot.querySelector('.status').textContent = 'Booked';
+                selectedSlot.onclick = null;
+            }
+            
+            // Clear form
+            this.reset();
+            document.getElementById('selectedSlot').value = '';
+            selectedSlot = null;
+            
+            // Update displays
+            displayBookings();
+            updateMechanicView();
+            
+            alert('✅ Appointment booked successfully!');
+        });
+        
+        function displayBookings() {
+            const container = document.getElementById('bookingsList');
+            
+            if (bookings.length === 0) {
+                container.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">No appointments yet</p>';
+                return;
+            }
+            
+            container.innerHTML = bookings.map(booking => {
+                const serviceNames = {
+                    'oil-change': 'Oil Change',
+                    'brake-service': 'Brake Service',
+                    'tire-rotation': 'Tire Rotation',
+                    'engine-diagnostic': 'Engine Diagnostic',
+                    'transmission': 'Transmission Service',
+                    'inspection': 'General Inspection',
+                    'other': 'Other Service'
+                };
+                
+                return `
+                    <div class="booking-card ${booking.status === 'urgent' ? 'urgent' : ''}">
+                        <div class="booking-header">
+                            <div class="booking-time">${booking.timeSlot}</div>
+                            <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
+                        </div>
+                        <div class="booking-details">
+                            <p><strong>Customer:</strong> ${booking.customerName}</p>
+                            <p><strong>Phone:</strong> ${booking.phone}</p>
+                            <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
+                            <p><strong>Service:</strong> ${serviceNames[booking.serviceType]}</p>
+                            <p><strong>Mechanic:</strong> ${getMechanicName(booking.mechanic)}</p>
+                            ${booking.description ? `<p><strong>Notes:</strong> ${booking.description}</p>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function getMechanicName(id) {
+            const names = {
+                'mike': 'Mike Johnson',
+                'sarah': 'Sarah Williams',
+                'david': 'David Brown'
+            };
+            return names[id] || id;
+        }
+        
+        function updateMechanicView() {
+            const container = document.getElementById('mechanicCards');
+            
+            // Filter bookings for current mechanic (for demo, showing all)
+            const mechanicBookings = bookings;
+            
+            document.getElementById('todayCount').textContent = mechanicBookings.length;
+            document.getElementById('pendingCount').textContent = mechanicBookings.filter(b => b.status === 'pending').length;
+            document.getElementById('completedCount').textContent = mechanicBookings.filter(b => b.status === 'completed').length;
+            
+            if (mechanicBookings.length === 0) {
+                container.innerHTML = '<p style="color: #999; text-align: center; padding: 40px; grid-column: 1/-1;">No jobs assigned yet</p>';
+                return;
+            }
+            
+            container.innerHTML = mechanicBookings.map(booking => {
+                const serviceNames = {
+                    'oil-change': 'Oil Change',
+                    'brake-service': 'Brake Service',
+                    'tire-rotation': 'Tire Rotation',
+                    'engine-diagnostic': 'Engine Diagnostic',
+                    'transmission': 'Transmission Service',
+                    'inspection': 'General Inspection',
+                    'other': 'Other Service'
+                };
+                
+                return `
+                    <div class="booking-card">
+                        <div class="booking-header">
+                            <div class="booking-time">${booking.timeSlot}</div>
+                            <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
+                        </div>
+                        <div class="booking-details">
+                            <p><strong>Customer:</strong> ${booking.customerName}</p>
+                            <p><strong>Phone:</strong> ${booking.phone}</p>
+                            <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
+                            <span class="service-type-tag">${serviceNames[booking.serviceType]}</span>
+                            ${booking.description ? `<p style="margin-top: 10px;"><strong>Issue:</strong> ${booking.description}</p>` : ''}
+                        </div>
+                        <div class="quick-actions">
+                            <button class="quick-btn complete" onclick="completeJob(${booking.id})">✓ Mark Complete</button>
+                            <button class="quick-btn cancel" onclick="cancelJob(${booking.id})">✗ Cancel</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function completeJob(id) {
+            const booking = bookings.find(b => b.id === id);
+            if (booking) {
+                booking.status = 'completed';
+                updateMechanicView();
+                displayBookings();
+            }
+        }
+        
+        function cancelJob(id) {
+            if (confirm('Are you sure you want to cancel this appointment?')) {
+                bookings = bookings.filter(b => b.id !== id);
+                updateMechanicView();
+                displayBookings();
+                generateTimeSlots(); // Regenerate to free up the slot
+            }
+        }
+        
+        let currentView = 'admin';
+        
+        function toggleView() {
+            const adminView = document.querySelector('.admin-view');
+            const mechanicView = document.querySelector('.mechanic-view');
+            const toggleText = document.getElementById('viewToggleText');
+            
+            if (currentView === 'admin') {
+                adminView.classList.remove('active');
+                mechanicView.classList.add('active');
+                toggleText.textContent = 'Switch to Admin View';
+                currentView = 'mechanic';
+            } else {
+                mechanicView.classList.remove('active');
+                adminView.classList.add('active');
+                toggleText.textContent = 'Switch to Mechanic View';
+                currentView = 'admin';
+            }
+        }
+        
+        function changeDate(days) {
+            // In a real app, this would change the calendar date
+            alert('Date navigation would work with backend integration');
+        }
+        
+        // Initialize
+        generateTimeSlots();
+        displayBookings();
+    </script>
+</body>
+</html>
