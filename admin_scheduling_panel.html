@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Auto Shop Admin Panel</title>
     <style>
+        :root {
+            --brand-yellow: #f4c430;
+            --brand-yellow-dark: #d9a300;
+            --brand-yellow-soft: #fff6d6;
+            --brand-text: #4a3a00;
+            --brand-panel: #2f2a1f;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -13,13 +21,13 @@
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f7fa;
+            background: #fffdf4;
             height: 100vh;
             overflow: hidden;
         }
         
         .navbar {
-            background: #2c3e50;
+            background: var(--brand-panel);
             color: white;
             padding: 15px 30px;
             display: flex;
@@ -28,6 +36,20 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         
+        .brand-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-title svg {
+            width: 48px;
+            height: 48px;
+            background: white;
+            border-radius: 6px;
+            padding: 4px;
+        }
+
         .navbar h1 {
             font-size: 1.5em;
         }
@@ -39,7 +61,7 @@
         }
         
         .view-toggle {
-            background: #34495e;
+            background: #51483a;
             padding: 8px 16px;
             border-radius: 6px;
             cursor: pointer;
@@ -47,7 +69,7 @@
         }
         
         .view-toggle:hover {
-            background: #415566;
+            background: #6a5f4e;
         }
         
         .main-container {
@@ -70,7 +92,7 @@
         }
         
         h2 {
-            color: #2c3e50;
+            color: var(--brand-text);
             margin-bottom: 20px;
             font-size: 1.3em;
         }
@@ -98,7 +120,7 @@
         
         input:focus, select:focus, textarea:focus {
             outline: none;
-            border-color: #3498db;
+            border-color: var(--brand-yellow-dark);
         }
         
         textarea {
@@ -110,8 +132,8 @@
         .btn {
             width: 100%;
             padding: 14px;
-            background: #3498db;
-            color: white;
+            background: var(--brand-yellow);
+            color: #2d2200;
             border: none;
             border-radius: 8px;
             font-size: 1em;
@@ -121,7 +143,7 @@
         }
         
         .btn:hover {
-            background: #2980b9;
+            background: var(--brand-yellow-dark);
         }
         
         .btn:disabled {
@@ -153,7 +175,7 @@
         }
         
         .calendar-header h3 {
-            color: #2c3e50;
+            color: var(--brand-text);
             font-size: 1.4em;
         }
         
@@ -164,7 +186,7 @@
         
         .calendar-nav button {
             padding: 8px 16px;
-            background: #ecf0f1;
+            background: #fff0bf;
             border: none;
             border-radius: 6px;
             cursor: pointer;
@@ -173,7 +195,7 @@
         }
         
         .calendar-nav button:hover {
-            background: #bdc3c7;
+            background: #ffe48a;
         }
         
         .time-slots {
@@ -194,14 +216,14 @@
         }
         
         .time-slot:hover:not(.booked) {
-            border-color: #3498db;
+            border-color: var(--brand-yellow-dark);
             transform: translateY(-2px);
         }
         
         .time-slot.selected {
-            background: #3498db;
-            color: white;
-            border-color: #3498db;
+            background: var(--brand-yellow);
+            color: #2d2200;
+            border-color: var(--brand-yellow-dark);
         }
         
         .time-slot.booked {
@@ -231,7 +253,7 @@
             padding: 20px;
             border-radius: 10px;
             margin-bottom: 15px;
-            border-left: 4px solid #3498db;
+            border-left: 4px solid var(--brand-yellow-dark);
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         }
         
@@ -248,7 +270,7 @@
         
         .booking-time {
             font-weight: 600;
-            color: #2c3e50;
+            color: var(--brand-text);
             font-size: 1.1em;
         }
         
@@ -284,7 +306,7 @@
         }
         
         .booking-details strong {
-            color: #2c3e50;
+            color: var(--brand-text);
         }
         
         .mechanic-view {
@@ -327,7 +349,7 @@
         .stat-number {
             font-size: 2em;
             font-weight: 700;
-            color: #3498db;
+            color: var(--brand-yellow-dark);
             margin-bottom: 5px;
         }
         
@@ -339,8 +361,8 @@
         .service-type-tag {
             display: inline-block;
             padding: 4px 10px;
-            background: #e8f4f8;
-            color: #2980b9;
+            background: var(--brand-yellow-soft);
+            color: #8a6400;
             border-radius: 12px;
             font-size: 0.85em;
             margin-right: 5px;
@@ -407,12 +429,19 @@
 </head>
 <body>
     <div class="navbar">
-        <h1>🔧 Auto Shop Admin Panel</h1>
+        <div class="brand-title">
+            <svg viewBox="0 0 120 120" aria-label="Marvel Auto logo" role="img">
+                <path d="M20 28 L20 90 L32 90 L32 50 L58 72 L84 50 L84 90 L96 90 L96 28 L58 58 Z" fill="none" stroke="#454545" stroke-width="6" stroke-linejoin="round"/>
+                <text x="60" y="103" text-anchor="middle" font-size="17" font-family="Arial, sans-serif" fill="#3a3a3a" font-weight="700">MARVEL</text>
+                <text x="60" y="114" text-anchor="middle" font-size="8" font-family="Arial, sans-serif" fill="#666">AUTO</text>
+            </svg>
+            <h1>Marvel Auto Admin Panel</h1>
+        </div>
         <div class="user-info">
             <div class="view-toggle" onclick="toggleView()">
                 <span id="viewToggleText">Switch to Mechanic View</span>
             </div>
-            <div>Admin: John Smith</div>
+            <div>Admin: Ajith Mathew</div>
         </div>
     </div>
     
@@ -455,9 +484,8 @@
                     <label>Assigned Mechanic *</label>
                     <select id="mechanic" required>
                         <option value="">Select mechanic...</option>
-                        <option value="mike">Mike Johnson</option>
-                        <option value="sarah">Sarah Williams</option>
-                        <option value="david">David Brown</option>
+                        <option value="ajith-mathew">Ajith Mathew</option>
+                        <option value="alvin-antony">Alvin Antony</option>
                     </select>
                 </div>
                 
@@ -670,9 +698,8 @@
         
         function getMechanicName(id) {
             const names = {
-                'mike': 'Mike Johnson',
-                'sarah': 'Sarah Williams',
-                'david': 'David Brown'
+                'ajith-mathew': 'Ajith Mathew',
+                'alvin-antony': 'Alvin Antony'
             };
             return names[id] || id;
         }
