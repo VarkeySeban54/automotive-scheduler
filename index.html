@@ -692,9 +692,7 @@
         async function init() {
             initializeVehicleDropdowns();
             updateDateDisplay();
-            await loadTimeSlots();
-            await loadBookings();
-            await loadMechanicView();
+            await loadDashboardData();
         }
 
         function initializeVehicleDropdowns() {
@@ -746,41 +744,58 @@
             document.getElementById('currentDate').textContent = formatDisplayDate(currentDate);
         }
         
-        // Load available time slots from API
-        async function loadTimeSlots() {
-            const container = document.getElementById('timeSlots');
+        async function loadDashboardData() {
             const dateStr = formatDate(currentDate);
-            
+
             try {
-                const response = await fetch(`${API_BASE_URL}/timeslots?date=${dateStr}`);
+                const response = await fetch(`${API_BASE_URL}/dashboard?date=${dateStr}`);
                 const data = await response.json();
-                
-                if (data.success) {
-                    container.innerHTML = '';
-                    
-                    data.slots.forEach(slot => {
-                        const slotDiv = document.createElement('div');
-                        slotDiv.className = `time-slot ${!slot.available ? 'booked' : ''}`;
-                        slotDiv.innerHTML = `
-                            <div class="time">${slot.time}</div>
-                            <div class="status">${slot.available ? 'Available' : 'Booked'}</div>
-                        `;
-                        
-                        if (slot.available) {
-                            slotDiv.onclick = () => selectTimeSlot(slot.time, slotDiv);
-                        }
-                        
-                        container.appendChild(slotDiv);
-                    });
-                } else {
-                    container.innerHTML = '<p class="error-message">Failed to load time slots</p>';
+
+                if (!data.success) {
+                    throw new Error('Failed to load dashboard data');
                 }
+
+                renderTimeSlots(data.slots);
+                displayBookings(data.bookings);
+                displayMechanicStats(data.stats);
+                displayMechanicCards(data.bookings);
             } catch (error) {
-                console.error('Error loading time slots:', error);
-                container.innerHTML = '<p class="error-message">Error connecting to server</p>';
+                console.error('Error loading dashboard data:', error);
+                document.getElementById('timeSlots').innerHTML = '<p class="error-message">Error connecting to server</p>';
+                document.getElementById('bookingsList').innerHTML = '<p class="error-message">Error connecting to server</p>';
             }
         }
-        
+
+        // Load available time slots from API
+        async function loadTimeSlots() {
+            await loadDashboardData();
+        }
+
+        function renderTimeSlots(slots) {
+            const container = document.getElementById('timeSlots');
+            container.innerHTML = '';
+
+            slots.forEach(slot => {
+                const slotDiv = document.createElement('div');
+                slotDiv.className = `time-slot ${!slot.available ? 'booked' : ''}`;
+                slotDiv.innerHTML = `
+                    <div class="time">${slot.time}</div>
+                    <div class="status">${slot.available ? 'Available' : 'Booked'}</div>
+                `;
+
+                if (slot.available) {
+                    slotDiv.onclick = () => selectTimeSlot(slot.time, slotDiv);
+                }
+
+                container.appendChild(slotDiv);
+            });
+        }
+
+        async function loadBookings() {
+            await loadDashboardData();
+        }
+
+
         function selectTimeSlot(time, element) {
             if (element.classList.contains('booked')) return;
             
@@ -797,25 +812,6 @@
         }
         
         // Load bookings from API
-        async function loadBookings() {
-            const container = document.getElementById('bookingsList');
-            const dateStr = formatDate(currentDate);
-            
-            try {
-                const response = await fetch(`${API_BASE_URL}/bookings?date=${dateStr}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    displayBookings(data.bookings);
-                } else {
-                    container.innerHTML = '<p class="error-message">Failed to load bookings</p>';
-                }
-            } catch (error) {
-                console.error('Error loading bookings:', error);
-                container.innerHTML = '<p class="error-message">Error connecting to server</p>';
-            }
-        }
-        
         function displayBookings(bookings) {
             const container = document.getElementById('bookingsList');
             
@@ -911,9 +907,7 @@
                     }
                     
                     // Reload data
-                    await loadTimeSlots();
-                    await loadBookings();
-                    await loadMechanicView();
+                    await loadDashboardData();
                     
                     setTimeout(() => {
                         messageDiv.innerHTML = '';
@@ -932,31 +926,15 @@
         
         // Load mechanic view
         async function loadMechanicView() {
-            const dateStr = formatDate(currentDate);
-            
-            try {
-                // Load stats
-                const statsResponse = await fetch(`${API_BASE_URL}/stats?date=${dateStr}`);
-                const statsData = await statsResponse.json();
-                
-                if (statsData.success) {
-                    document.getElementById('todayCount').textContent = statsData.stats.today_total;
-                    document.getElementById('pendingCount').textContent = statsData.stats.pending;
-                    document.getElementById('completedCount').textContent = statsData.stats.completed;
-                }
-                
-                // Load bookings for mechanic cards
-                const bookingsResponse = await fetch(`${API_BASE_URL}/bookings?date=${dateStr}`);
-                const bookingsData = await bookingsResponse.json();
-                
-                if (bookingsData.success) {
-                    displayMechanicCards(bookingsData.bookings);
-                }
-            } catch (error) {
-                console.error('Error loading mechanic view:', error);
-            }
+            await loadDashboardData();
         }
-        
+
+        function displayMechanicStats(stats) {
+            document.getElementById('todayCount').textContent = stats.today_total;
+            document.getElementById('pendingCount').textContent = stats.pending;
+            document.getElementById('completedCount').textContent = stats.completed;
+        }
+
         function displayMechanicCards(bookings) {
             const container = document.getElementById('mechanicCards');
             
@@ -1009,8 +987,7 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    await loadBookings();
-                    await loadMechanicView();
+                    await loadDashboardData();
                 }
             } catch (error) {
                 console.error('Error completing job:', error);
@@ -1031,9 +1008,7 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    await loadTimeSlots();
-                    await loadBookings();
-                    await loadMechanicView();
+                    await loadDashboardData();
                 }
             } catch (error) {
                 console.error('Error cancelling job:', error);
@@ -1071,9 +1046,7 @@
             selectedSlotElement = null;
             document.getElementById('selectedSlot').value = '';
             
-            await loadTimeSlots();
-            await loadBookings();
-            await loadMechanicView();
+            await loadDashboardData();
         }
         
         // Initialize on page load
