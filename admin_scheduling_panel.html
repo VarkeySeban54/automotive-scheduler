@@ -462,8 +462,17 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>Vehicle *</label>
-                    <input type="text" id="vehicle" placeholder="2020 Toyota Camry" required>
+                    <label>Vehicle Make *</label>
+                    <select id="vehicleMake" required>
+                        <option value="">Select make...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Vehicle Model *</label>
+                    <select id="vehicleModel" required disabled>
+                        <option value="">Select make first...</option>
+                    </select>
                 </div>
                 
                 <div class="form-group">
@@ -563,6 +572,24 @@
         let selectedSlot = null;
         let selectedSlotElement = null;
         let currentView = 'admin';
+        const vehicleCatalog = {
+            'Toyota': ['Camry', 'Corolla', 'RAV4', 'Highlander', 'Tacoma', 'Prius'],
+            'Honda': ['Civic', 'Accord', 'CR-V', 'Pilot', 'Odyssey', 'HR-V'],
+            'Ford': ['F-150', 'Escape', 'Explorer', 'Mustang', 'Edge', 'Ranger'],
+            'Chevrolet': ['Silverado', 'Equinox', 'Tahoe', 'Malibu', 'Traverse', 'Suburban'],
+            'Nissan': ['Altima', 'Sentra', 'Rogue', 'Murano', 'Pathfinder', 'Frontier'],
+            'Hyundai': ['Elantra', 'Sonata', 'Tucson', 'Santa Fe', 'Palisade', 'Kona'],
+            'Kia': ['Forte', 'K5', 'Sportage', 'Sorento', 'Telluride', 'Soul'],
+            'BMW': ['3 Series', '5 Series', 'X3', 'X5', 'X1', '7 Series'],
+            'Mercedes-Benz': ['C-Class', 'E-Class', 'GLC', 'GLE', 'A-Class', 'S-Class'],
+            'Audi': ['A3', 'A4', 'Q3', 'Q5', 'A6', 'Q7'],
+            'Volkswagen': ['Jetta', 'Passat', 'Tiguan', 'Atlas', 'Golf', 'Taos'],
+            'Subaru': ['Outback', 'Forester', 'Crosstrek', 'Impreza', 'Legacy', 'Ascent'],
+            'Mazda': ['Mazda3', 'Mazda6', 'CX-5', 'CX-30', 'CX-9', 'MX-5 Miata'],
+            'Jeep': ['Wrangler', 'Grand Cherokee', 'Cherokee', 'Compass', 'Renegade', 'Gladiator'],
+            'Ram': ['1500', '2500', '3500', 'ProMaster', 'ProMaster City'],
+            'GMC': ['Sierra', 'Terrain', 'Acadia', 'Yukon', 'Canyon']
+        };
         
         // Helper function to format date
         function formatDate(date) {
@@ -580,10 +607,56 @@
         
         // Initialize the app
         async function init() {
+            initializeVehicleDropdowns();
             updateDateDisplay();
             await loadTimeSlots();
             await loadBookings();
             await loadMechanicView();
+        }
+
+        function initializeVehicleDropdowns() {
+            const makeSelect = document.getElementById('vehicleMake');
+            const form = document.getElementById('bookingForm');
+
+            Object.keys(vehicleCatalog).sort().forEach(make => {
+                const option = document.createElement('option');
+                option.value = make;
+                option.textContent = make;
+                makeSelect.appendChild(option);
+            });
+
+            makeSelect.addEventListener('change', handleMakeChange);
+            form.addEventListener('reset', () => setTimeout(handleMakeChange, 0));
+        }
+
+        function handleMakeChange() {
+            const makeSelect = document.getElementById('vehicleMake');
+            const modelSelect = document.getElementById('vehicleModel');
+            const selectedMake = makeSelect.value;
+
+            modelSelect.innerHTML = '';
+
+            const placeholderOption = document.createElement('option');
+            placeholderOption.value = '';
+
+            if (!selectedMake) {
+                placeholderOption.textContent = 'Select make first...';
+                modelSelect.appendChild(placeholderOption);
+                modelSelect.disabled = true;
+                return;
+            }
+
+            placeholderOption.textContent = 'Select model...';
+            modelSelect.appendChild(placeholderOption);
+
+            vehicleCatalog[selectedMake].forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+            });
+
+            modelSelect.disabled = false;
         }
         
         function updateDateDisplay() {
@@ -714,7 +787,7 @@
             const bookingData = {
                 customer_name: document.getElementById('customerName').value,
                 phone: document.getElementById('customerPhone').value,
-                vehicle: document.getElementById('vehicle').value,
+                vehicle: `${document.getElementById('vehicleMake').value} ${document.getElementById('vehicleModel').value}`.trim(),
                 service_type: document.getElementById('serviceType').value,
                 mechanic: document.getElementById('mechanic').value,
                 description: document.getElementById('description').value,
