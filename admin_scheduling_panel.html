@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marvel Auto Admin Panel</title>
+    <title>Auto Shop Admin Panel</title>
     <style>
         * {
             margin: 0;
@@ -19,8 +19,8 @@
         }
         
         .navbar {
-            background: #f1c40f;
-            color: #2c3e50;
+            background: #2c3e50;
+            color: white;
             padding: 15px 30px;
             display: flex;
             justify-content: space-between;
@@ -39,7 +39,7 @@
         }
         
         .view-toggle {
-            background: #f39c12;
+            background: #34495e;
             padding: 8px 16px;
             border-radius: 6px;
             cursor: pointer;
@@ -47,7 +47,7 @@
         }
         
         .view-toggle:hover {
-            background: #e67e22;
+            background: #415566;
         }
         
         .main-container {
@@ -124,6 +124,11 @@
             background: #2980b9;
         }
         
+        .btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+        
         .btn-secondary {
             background: #95a5a6;
             margin-top: 10px;
@@ -188,7 +193,7 @@
             background: white;
         }
         
-        .time-slot:hover {
+        .time-slot:hover:not(.booked) {
             border-color: #3498db;
             transform: translateY(-2px);
         }
@@ -204,10 +209,6 @@
             color: white;
             border-color: #e74c3c;
             cursor: not-allowed;
-        }
-        
-        .time-slot.booked:hover {
-            transform: none;
         }
         
         .time-slot .time {
@@ -380,11 +381,33 @@
         .quick-btn.cancel:hover {
             background: #bdc3c7;
         }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="navbar">
-        <h1>🔧 Marvel Auto Admin Panel</h1>
+        <h1>🔧 Auto Shop Admin Panel</h1>
         <div class="user-info">
             <div class="view-toggle" onclick="toggleView()">
                 <span id="viewToggleText">Switch to Mechanic View</span>
@@ -397,6 +420,7 @@
     <div class="main-container admin-view active">
         <div class="booking-panel">
             <h2>📞 New Booking</h2>
+            <div id="formMessage"></div>
             <form id="bookingForm">
                 <div class="form-group">
                     <label>Customer Name *</label>
@@ -428,11 +452,12 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>Assigned Mechanic</label>
-                    <select id="mechanic">
-                        <option value="ajith">Ajith Mathew</option>
-                        <option value="alwin">Alwin Antony</option>
-                        <option value="varghese">Varghese Sebastian</option>
+                    <label>Assigned Mechanic *</label>
+                    <select id="mechanic" required>
+                        <option value="">Select mechanic...</option>
+                        <option value="mike">Mike Johnson</option>
+                        <option value="sarah">Sarah Williams</option>
+                        <option value="david">David Brown</option>
                     </select>
                 </div>
                 
@@ -442,11 +467,11 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>Selected Time Slot</label>
-                    <input type="text" id="selectedSlot" readonly placeholder="Select from calendar">
+                    <label>Selected Time Slot *</label>
+                    <input type="text" id="selectedSlot" readonly placeholder="Select from calendar" required>
                 </div>
                 
-                <button type="submit" class="btn">📅 Book Appointment</button>
+                <button type="submit" class="btn" id="submitBtn">📅 Book Appointment</button>
                 <button type="reset" class="btn btn-secondary">Clear Form</button>
             </form>
         </div>
@@ -454,7 +479,7 @@
         <div class="calendar-section">
             <div class="calendar">
                 <div class="calendar-header">
-                    <h3 id="currentDate">Today - March 15, 2024</h3>
+                    <h3 id="currentDate">Today</h3>
                     <div class="calendar-nav">
                         <button onclick="changeDate(-1)">← Previous Day</button>
                         <button onclick="changeDate(0)">Today</button>
@@ -463,14 +488,14 @@
                 </div>
                 
                 <div class="time-slots" id="timeSlots">
-                    <!-- Time slots will be generated here -->
+                    <div class="loading">Loading available time slots...</div>
                 </div>
             </div>
             
             <div class="bookings-list">
                 <h2>📋 Today's Appointments</h2>
                 <div id="bookingsList">
-                    <!-- Bookings will appear here -->
+                    <div class="loading">Loading appointments...</div>
                 </div>
             </div>
         </div>
@@ -496,94 +521,118 @@
             
             <h2>🔧 My Schedule</h2>
             <div class="mechanic-cards" id="mechanicCards">
-                <!-- Mechanic job cards will appear here -->
+                <div class="loading">Loading schedule...</div>
             </div>
         </div>
     </div>
 
     <script>
-        // Generate time slots for the day
-        function generateTimeSlots() {
-            const container = document.getElementById('timeSlots');
-            container.innerHTML = '';
-            
-            const hours = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', 
-                          '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'];
-            
-            hours.forEach(time => {
-                const slot = document.createElement('div');
-                slot.className = 'time-slot';
-                slot.innerHTML = `
-                    <div class="time">${time}</div>
-                    <div class="status">Available</div>
-                `;
-                slot.onclick = () => selectTimeSlot(time, slot);
-                container.appendChild(slot);
+        // API Configuration
+        const API_BASE_URL = 'http://localhost:5000/api';
+        
+        // Global state
+        let currentDate = new Date();
+        let selectedSlot = null;
+        let selectedSlotElement = null;
+        let currentView = 'admin';
+        
+        // Helper function to format date
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+        
+        function formatDisplayDate(date) {
+            return date.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
             });
         }
         
-        let selectedSlot = null;
-        let bookings = [];
+        // Initialize the app
+        async function init() {
+            updateDateDisplay();
+            await loadTimeSlots();
+            await loadBookings();
+            await loadMechanicView();
+        }
+        
+        function updateDateDisplay() {
+            document.getElementById('currentDate').textContent = formatDisplayDate(currentDate);
+        }
+        
+        // Load available time slots from API
+        async function loadTimeSlots() {
+            const container = document.getElementById('timeSlots');
+            const dateStr = formatDate(currentDate);
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/timeslots?date=${dateStr}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    container.innerHTML = '';
+                    
+                    data.slots.forEach(slot => {
+                        const slotDiv = document.createElement('div');
+                        slotDiv.className = `time-slot ${!slot.available ? 'booked' : ''}`;
+                        slotDiv.innerHTML = `
+                            <div class="time">${slot.time}</div>
+                            <div class="status">${slot.available ? 'Available' : 'Booked'}</div>
+                        `;
+                        
+                        if (slot.available) {
+                            slotDiv.onclick = () => selectTimeSlot(slot.time, slotDiv);
+                        }
+                        
+                        container.appendChild(slotDiv);
+                    });
+                } else {
+                    container.innerHTML = '<p class="error-message">Failed to load time slots</p>';
+                }
+            } catch (error) {
+                console.error('Error loading time slots:', error);
+                container.innerHTML = '<p class="error-message">Error connecting to server</p>';
+            }
+        }
         
         function selectTimeSlot(time, element) {
             if (element.classList.contains('booked')) return;
             
             // Remove previous selection
-            if (selectedSlot) {
-                selectedSlot.classList.remove('selected');
+            if (selectedSlotElement) {
+                selectedSlotElement.classList.remove('selected');
             }
             
             // Select new slot
             element.classList.add('selected');
-            selectedSlot = element;
+            selectedSlotElement = element;
+            selectedSlot = time;
             document.getElementById('selectedSlot').value = time;
         }
         
-        // Handle form submission
-        document.getElementById('bookingForm').addEventListener('submit', function(e) {
-            e.preventDefault();
+        // Load bookings from API
+        async function loadBookings() {
+            const container = document.getElementById('bookingsList');
+            const dateStr = formatDate(currentDate);
             
-            const booking = {
-                id: Date.now(),
-                customerName: document.getElementById('customerName').value,
-                phone: document.getElementById('customerPhone').value,
-                vehicle: document.getElementById('vehicle').value,
-                serviceType: document.getElementById('serviceType').value,
-                mechanic: document.getElementById('mechanic').value,
-                description: document.getElementById('description').value,
-                timeSlot: document.getElementById('selectedSlot').value,
-                status: 'pending',
-                date: new Date().toLocaleDateString()
-            };
-            
-            if (!booking.timeSlot) {
-                alert('Please select a time slot from the calendar');
-                return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings?date=${dateStr}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayBookings(data.bookings);
+                } else {
+                    container.innerHTML = '<p class="error-message">Failed to load bookings</p>';
+                }
+            } catch (error) {
+                console.error('Error loading bookings:', error);
+                container.innerHTML = '<p class="error-message">Error connecting to server</p>';
             }
-            
-            bookings.push(booking);
-            
-            // Mark slot as booked
-            if (selectedSlot) {
-                selectedSlot.classList.remove('selected');
-                selectedSlot.classList.add('booked');
-                selectedSlot.querySelector('.status').textContent = 'Booked';
-                selectedSlot.onclick = null;
-            }
-            
-            // Clear form
-            this.reset();
-            document.getElementById('selectedSlot').value = '';
-            selectedSlot = null;
-            
-            // Update displays
-            displayBookings();
-            updateMechanicView();
-            
-            alert('✅ Appointment booked successfully!');
-        });
+        }
         
-        function displayBookings() {
+        function displayBookings(bookings) {
             const container = document.getElementById('bookingsList');
             
             if (bookings.length === 0) {
@@ -591,34 +640,32 @@
                 return;
             }
             
-            container.innerHTML = bookings.map(booking => {
-                const serviceNames = {
-                    'oil-change': 'Oil Change',
-                    'brake-service': 'Brake Service',
-                    'tire-rotation': 'Tire Rotation',
-                    'engine-diagnostic': 'Engine Diagnostic',
-                    'transmission': 'Transmission Service',
-                    'inspection': 'General Inspection',
-                    'other': 'Other Service'
-                };
-                
-                return `
-                    <div class="booking-card ${booking.status === 'urgent' ? 'urgent' : ''}">
-                        <div class="booking-header">
-                            <div class="booking-time">${booking.timeSlot}</div>
-                            <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
-                        </div>
-                        <div class="booking-details">
-                            <p><strong>Customer:</strong> ${booking.customerName}</p>
-                            <p><strong>Phone:</strong> ${booking.phone}</p>
-                            <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
-                            <p><strong>Service:</strong> ${serviceNames[booking.serviceType]}</p>
-                            <p><strong>Mechanic:</strong> ${getMechanicName(booking.mechanic)}</p>
-                            ${booking.description ? `<p><strong>Notes:</strong> ${booking.description}</p>` : ''}
-                        </div>
+            const serviceNames = {
+                'oil-change': 'Oil Change',
+                'brake-service': 'Brake Service',
+                'tire-rotation': 'Tire Rotation',
+                'engine-diagnostic': 'Engine Diagnostic',
+                'transmission': 'Transmission Service',
+                'inspection': 'General Inspection',
+                'other': 'Other Service'
+            };
+            
+            container.innerHTML = bookings.map(booking => `
+                <div class="booking-card">
+                    <div class="booking-header">
+                        <div class="booking-time">${booking.time_slot}</div>
+                        <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
                     </div>
-                `;
-            }).join('');
+                    <div class="booking-details">
+                        <p><strong>Customer:</strong> ${booking.customer_name}</p>
+                        <p><strong>Phone:</strong> ${booking.phone}</p>
+                        <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
+                        <p><strong>Service:</strong> ${serviceNames[booking.service_type]}</p>
+                        <p><strong>Mechanic:</strong> ${getMechanicName(booking.mechanic)}</p>
+                        ${booking.description ? `<p><strong>Notes:</strong> ${booking.description}</p>` : ''}
+                    </div>
+                </div>
+            `).join('');
         }
         
         function getMechanicName(id) {
@@ -630,73 +677,185 @@
             return names[id] || id;
         }
         
-        function updateMechanicView() {
+        // Handle form submission
+        document.getElementById('bookingForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const messageDiv = document.getElementById('formMessage');
+            
+            const bookingData = {
+                customer_name: document.getElementById('customerName').value,
+                phone: document.getElementById('customerPhone').value,
+                vehicle: document.getElementById('vehicle').value,
+                service_type: document.getElementById('serviceType').value,
+                mechanic: document.getElementById('mechanic').value,
+                description: document.getElementById('description').value,
+                time_slot: selectedSlot,
+                booking_date: formatDate(currentDate)
+            };
+            
+            if (!bookingData.time_slot) {
+                messageDiv.innerHTML = '<div class="error-message">Please select a time slot from the calendar</div>';
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Booking...';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(bookingData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    messageDiv.innerHTML = '<div class="success-message">✅ Appointment booked successfully!</div>';
+                    
+                    // Reset form
+                    this.reset();
+                    document.getElementById('selectedSlot').value = '';
+                    selectedSlot = null;
+                    if (selectedSlotElement) {
+                        selectedSlotElement.classList.remove('selected');
+                        selectedSlotElement = null;
+                    }
+                    
+                    // Reload data
+                    await loadTimeSlots();
+                    await loadBookings();
+                    await loadMechanicView();
+                    
+                    setTimeout(() => {
+                        messageDiv.innerHTML = '';
+                    }, 3000);
+                } else {
+                    messageDiv.innerHTML = `<div class="error-message">❌ ${data.error}</div>`;
+                }
+            } catch (error) {
+                console.error('Error creating booking:', error);
+                messageDiv.innerHTML = '<div class="error-message">❌ Error connecting to server</div>';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '📅 Book Appointment';
+            }
+        });
+        
+        // Load mechanic view
+        async function loadMechanicView() {
+            const dateStr = formatDate(currentDate);
+            
+            try {
+                // Load stats
+                const statsResponse = await fetch(`${API_BASE_URL}/stats?date=${dateStr}`);
+                const statsData = await statsResponse.json();
+                
+                if (statsData.success) {
+                    document.getElementById('todayCount').textContent = statsData.stats.today_total;
+                    document.getElementById('pendingCount').textContent = statsData.stats.pending;
+                    document.getElementById('completedCount').textContent = statsData.stats.completed;
+                }
+                
+                // Load bookings for mechanic cards
+                const bookingsResponse = await fetch(`${API_BASE_URL}/bookings?date=${dateStr}`);
+                const bookingsData = await bookingsResponse.json();
+                
+                if (bookingsData.success) {
+                    displayMechanicCards(bookingsData.bookings);
+                }
+            } catch (error) {
+                console.error('Error loading mechanic view:', error);
+            }
+        }
+        
+        function displayMechanicCards(bookings) {
             const container = document.getElementById('mechanicCards');
             
-            // Filter bookings for current mechanic (for demo, showing all)
-            const mechanicBookings = bookings;
-            
-            document.getElementById('todayCount').textContent = mechanicBookings.length;
-            document.getElementById('pendingCount').textContent = mechanicBookings.filter(b => b.status === 'pending').length;
-            document.getElementById('completedCount').textContent = mechanicBookings.filter(b => b.status === 'completed').length;
-            
-            if (mechanicBookings.length === 0) {
+            if (bookings.length === 0) {
                 container.innerHTML = '<p style="color: #999; text-align: center; padding: 40px; grid-column: 1/-1;">No jobs assigned yet</p>';
                 return;
             }
             
-            container.innerHTML = mechanicBookings.map(booking => {
-                const serviceNames = {
-                    'oil-change': 'Oil Change',
-                    'brake-service': 'Brake Service',
-                    'tire-rotation': 'Tire Rotation',
-                    'engine-diagnostic': 'Engine Diagnostic',
-                    'transmission': 'Transmission Service',
-                    'inspection': 'General Inspection',
-                    'other': 'Other Service'
-                };
-                
-                return `
-                    <div class="booking-card">
-                        <div class="booking-header">
-                            <div class="booking-time">${booking.timeSlot}</div>
-                            <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
-                        </div>
-                        <div class="booking-details">
-                            <p><strong>Customer:</strong> ${booking.customerName}</p>
-                            <p><strong>Phone:</strong> ${booking.phone}</p>
-                            <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
-                            <span class="service-type-tag">${serviceNames[booking.serviceType]}</span>
-                            ${booking.description ? `<p style="margin-top: 10px;"><strong>Issue:</strong> ${booking.description}</p>` : ''}
-                        </div>
-                        <div class="quick-actions">
-                            <button class="quick-btn complete" onclick="completeJob(${booking.id})">✓ Mark Complete</button>
-                            <button class="quick-btn cancel" onclick="cancelJob(${booking.id})">✗ Cancel</button>
-                        </div>
+            const serviceNames = {
+                'oil-change': 'Oil Change',
+                'brake-service': 'Brake Service',
+                'tire-rotation': 'Tire Rotation',
+                'engine-diagnostic': 'Engine Diagnostic',
+                'transmission': 'Transmission Service',
+                'inspection': 'General Inspection',
+                'other': 'Other Service'
+            };
+            
+            container.innerHTML = bookings.map(booking => `
+                <div class="booking-card">
+                    <div class="booking-header">
+                        <div class="booking-time">${booking.time_slot}</div>
+                        <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
                     </div>
-                `;
-            }).join('');
+                    <div class="booking-details">
+                        <p><strong>Customer:</strong> ${booking.customer_name}</p>
+                        <p><strong>Phone:</strong> ${booking.phone}</p>
+                        <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
+                        <span class="service-type-tag">${serviceNames[booking.service_type]}</span>
+                        ${booking.description ? `<p style="margin-top: 10px;"><strong>Issue:</strong> ${booking.description}</p>` : ''}
+                    </div>
+                    <div class="quick-actions">
+                        <button class="quick-btn complete" onclick="completeJob(${booking.id})">✓ Mark Complete</button>
+                        <button class="quick-btn cancel" onclick="cancelJob(${booking.id})">✗ Cancel</button>
+                    </div>
+                </div>
+            `).join('');
         }
         
-        function completeJob(id) {
-            const booking = bookings.find(b => b.id === id);
-            if (booking) {
-                booking.status = 'completed';
-                updateMechanicView();
-                displayBookings();
+        async function completeJob(id) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ status: 'completed' })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    await loadBookings();
+                    await loadMechanicView();
+                }
+            } catch (error) {
+                console.error('Error completing job:', error);
+                alert('Error completing job');
             }
         }
         
-        function cancelJob(id) {
-            if (confirm('Are you sure you want to cancel this appointment?')) {
-                bookings = bookings.filter(b => b.id !== id);
-                updateMechanicView();
-                displayBookings();
-                generateTimeSlots(); // Regenerate to free up the slot
+        async function cancelJob(id) {
+            if (!confirm('Are you sure you want to cancel this appointment?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    await loadTimeSlots();
+                    await loadBookings();
+                    await loadMechanicView();
+                }
+            } catch (error) {
+                console.error('Error cancelling job:', error);
+                alert('Error cancelling job');
             }
         }
-        
-        let currentView = 'admin';
         
         function toggleView() {
             const adminView = document.querySelector('.admin-view');
@@ -716,14 +875,25 @@
             }
         }
         
-        function changeDate(days) {
-            // In a real app, this would change the calendar date
-            alert('Date navigation would work with backend integration');
+        async function changeDate(days) {
+            if (days === 0) {
+                currentDate = new Date();
+            } else {
+                currentDate.setDate(currentDate.getDate() + days);
+            }
+            
+            updateDateDisplay();
+            selectedSlot = null;
+            selectedSlotElement = null;
+            document.getElementById('selectedSlot').value = '';
+            
+            await loadTimeSlots();
+            await loadBookings();
+            await loadMechanicView();
         }
         
-        // Initialize
-        generateTimeSlots();
-        displayBookings();
+        // Initialize on page load
+        init();
     </script>
 </body>
 </html>
