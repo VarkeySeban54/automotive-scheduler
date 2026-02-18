@@ -94,6 +94,47 @@ def resolve_target_date(raw_date):
     return datetime.now().strftime('%Y-%m-%d')
 
 
+def build_slot_availability(cursor, date, mechanic_id=None):
+    """Build slot availability either for one mechanic or for total shop capacity."""
+    if mechanic_id:
+        cursor.execute('''
+            SELECT time_slot FROM bookings
+            WHERE booking_date = ? AND mechanic = ? AND status != 'cancelled'
+        ''', (date, mechanic_id))
+        booked_slots = {row['time_slot'] for row in cursor.fetchall()}
+
+        return [
+            {
+                'time': slot,
+                'available': slot not in booked_slots,
+                'available_mechanics': 1 if slot not in booked_slots else 0
+            }
+            for slot in ALL_TIME_SLOTS
+        ]
+
+    cursor.execute('SELECT COUNT(*) as count FROM mechanics')
+    mechanic_count = cursor.fetchone()['count']
+
+    cursor.execute('''
+        SELECT time_slot, COUNT(*) as booking_count FROM bookings
+        WHERE booking_date = ? AND status != 'cancelled'
+        GROUP BY time_slot
+    ''', (date,))
+    booking_counts = {row['time_slot']: row['booking_count'] for row in cursor.fetchall()}
+
+    slots = []
+    for slot in ALL_TIME_SLOTS:
+        booked_count = booking_counts.get(slot, 0)
+        free_count = max(mechanic_count - booked_count, 0)
+        slots.append({
+            'time': slot,
+            'available': free_count > 0,
+            'available_mechanics': free_count
+        })
+
+    return slots
+
+
 # ============================================
 # BOOKING ENDPOINTS
 # ============================================
@@ -155,17 +196,17 @@ def create_booking():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Check if time slot is already booked
+    # Check if time slot is already booked for the selected mechanic
     cursor.execute('''
         SELECT id FROM bookings 
-        WHERE time_slot = ? AND booking_date = ? AND status != 'cancelled'
-    ''', (data['time_slot'], data['booking_date']))
+        WHERE time_slot = ? AND booking_date = ? AND mechanic = ? AND status != 'cancelled'
+    ''', (data['time_slot'], data['booking_date'], data['mechanic']))
     
     if cursor.fetchone():
         conn.close()
         return jsonify({
             'success': False,
-            'error': 'Time slot already booked'
+            'error': 'Time slot already booked for this mechanic'
         }), 409
     
     # Insert the booking
@@ -351,30 +392,18 @@ def get_mechanic_bookings(mechanic_id):
 def get_available_slots():
     """Get available time slots for a specific date"""
     date = resolve_target_date(request.args.get('date'))
+    mechanic = request.args.get('mechanic')
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Get booked slots for the date
-    cursor.execute('''
-        SELECT time_slot FROM bookings 
-        WHERE booking_date = ? AND status != 'cancelled'
-    ''', (date,))
-    
-    booked_slots = [row['time_slot'] for row in cursor.fetchall()]
+    slots = build_slot_availability(cursor, date, mechanic)
     conn.close()
-    
-    # Build response with availability
-    slots = []
-    for slot in ALL_TIME_SLOTS:
-        slots.append({
-            'time': slot,
-            'available': slot not in booked_slots
-        })
     
     return jsonify({
         'success': True,
         'date': date,
+        'mechanic': mechanic,
         'slots': slots
     })
 
@@ -428,6 +457,7 @@ def get_stats():
 def get_dashboard_data():
     """Get bookings, stats, and time slot availability in one request."""
     date = resolve_target_date(request.args.get('date'))
+    mechanic = request.args.get('mechanic')
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -457,18 +487,9 @@ def get_dashboard_data():
     ''', (date,))
     completed = cursor.fetchone()['count']
 
-    cursor.execute('''
-        SELECT time_slot FROM bookings
-        WHERE booking_date = ? AND status != 'cancelled'
-    ''', (date,))
-    booked_slots = {row['time_slot'] for row in cursor.fetchall()}
+    slots = build_slot_availability(cursor, date, mechanic)
 
     conn.close()
-
-    slots = [
-        {'time': slot, 'available': slot not in booked_slots}
-        for slot in ALL_TIME_SLOTS
-    ]
 
     return jsonify({
         'success': True,
@@ -511,9 +532,9 @@ def home():
             'DELETE /api/bookings/:id': 'Cancel booking',
             'GET /api/mechanics': 'Get all mechanics',
             'GET /api/mechanics/:id/bookings': 'Get mechanic bookings',
-            'GET /api/timeslots': 'Get available slots (optional: ?date=YYYY-MM-DD)',
+            'GET /api/timeslots': 'Get available slots (optional: ?date=YYYY-MM-DD, ?mechanic=id)',
             'GET /api/stats': 'Get statistics (optional: ?date=YYYY-MM-DD)',
-            'GET /api/dashboard': 'Get bookings, stats, and slots for one date (optional: ?date=YYYY-MM-DD)',
+            'GET /api/dashboard': 'Get bookings, stats, and slots for one date (optional: ?date=YYYY-MM-DD, ?mechanic=id)',
             'GET /api/health': 'Health check'
         }
     })

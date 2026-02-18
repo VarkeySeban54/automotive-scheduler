@@ -811,7 +811,13 @@
             });
 
             makeSelect.addEventListener('change', handleMakeChange);
-            form.addEventListener('reset', () => setTimeout(handleMakeChange, 0));
+            form.addEventListener('reset', () => {
+                setTimeout(() => {
+                    handleMakeChange();
+                    handleMechanicChange();
+                }, 0);
+            });
+            document.getElementById('mechanic').addEventListener('change', handleMechanicChange);
         }
 
         function handleMakeChange() {
@@ -844,6 +850,14 @@
             modelSelect.disabled = false;
         }
         
+
+        function handleMechanicChange() {
+            selectedSlot = null;
+            selectedSlotElement = null;
+            document.getElementById('selectedSlot').value = '';
+            loadDashboardData();
+        }
+
         function updateDateDisplay() {
             document.getElementById('currentDate').textContent = formatDisplayDate(currentDate);
         }
@@ -852,7 +866,9 @@
             const dateStr = formatDate(currentDate);
 
             try {
-                const response = await fetch(`${API_BASE_URL}/dashboard?date=${dateStr}`);
+                const mechanic = document.getElementById('mechanic').value;
+                const query = mechanic ? `date=${dateStr}&mechanic=${encodeURIComponent(mechanic)}` : `date=${dateStr}`;
+                const response = await fetch(`${API_BASE_URL}/dashboard?${query}`);
                 const data = await response.json();
 
                 if (!data.success) {
@@ -884,7 +900,7 @@
                 slotDiv.className = `time-slot ${!slot.available ? 'booked' : ''}`;
                 slotDiv.innerHTML = `
                     <div class="time">${slot.time}</div>
-                    <div class="status">${slot.available ? 'Available' : 'Booked'}</div>
+                    <div class="status">${slot.available ? `Available (${slot.available_mechanics || 1} mechanic${(slot.available_mechanics || 1) === 1 ? '' : 's'})` : 'Booked'}</div>
                 `;
 
                 if (slot.available) {
