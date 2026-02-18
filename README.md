@@ -310,3 +310,15 @@ Common HTTP status codes:
 ## License
 
 MIT License
+
+
+## Admin Day Grid Schedule Configuration
+
+The admin schedule UI (`admin_scheduling_panel.html`) uses configurable day-grid constants near the top of the script:
+
+- `SLOT_MINUTES = 30`
+- `DAY_START = "08:00"`
+- `DAY_END = "18:00"`
+- `SLOT_ROW_HEIGHT = 48`
+
+Update these values to change the visible timeline range and slot interval. The backend (`app.py`) also defines `SLOT_MINUTES`, `DAY_START`, and `DAY_END` to keep `/api/timeslots` aligned with the UI slot cadence.

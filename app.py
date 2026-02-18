@@ -10,10 +10,25 @@ CORS(app)  # Enable CORS for frontend-backend communication
 # Database setup
 DATABASE = 'auto_shop.db'
 
-ALL_TIME_SLOTS = [
-    '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
-    '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'
-]
+SLOT_MINUTES = 30
+DAY_START = '08:00'
+DAY_END = '18:00'
+
+
+def _generate_time_slots(start_time, end_time, slot_minutes):
+    """Build readable slot labels between start/end using fixed minute increments."""
+    start_dt = datetime.strptime(start_time, '%H:%M')
+    end_dt = datetime.strptime(end_time, '%H:%M')
+    slots = []
+
+    while start_dt < end_dt:
+        slots.append(start_dt.strftime('%-I:%M %p'))
+        start_dt += timedelta(minutes=slot_minutes)
+
+    return slots
+
+
+ALL_TIME_SLOTS = _generate_time_slots(DAY_START, DAY_END, SLOT_MINUTES)
 
 NON_BLOCKING_BOOKING_STATUSES = ('cancelled', 'completed')
 
