@@ -106,6 +106,23 @@ class SlotAvailabilityTests(unittest.TestCase):
         self.assertIn("slotDiv.setAttribute('aria-disabled', slot.available ? 'false' : 'true');", html)
         self.assertIn("pointer-events: none;", html)
 
+    def test_init_db_seeds_admin_panel_default_mechanics(self):
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM mechanics')
+        conn.commit()
+        conn.close()
+
+        scheduler_app.init_db()
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT mechanic_id FROM mechanics ORDER BY mechanic_id')
+        mechanic_ids = [row['mechanic_id'] for row in cursor.fetchall()]
+        conn.close()
+
+        self.assertEqual(mechanic_ids, ['ajith-mathew', 'alvin-antony'])
+
 
 if __name__ == '__main__':
     unittest.main()
