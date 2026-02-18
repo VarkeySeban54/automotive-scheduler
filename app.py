@@ -1,11 +1,21 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from datetime import datetime, timedelta
+from functools import wraps
+import os
 import sqlite3
 import json
 
+import crypt
+from flask import Flask, request, jsonify, redirect, render_template, session, url_for
+from flask_cors import CORS
+from datetime import datetime, timedelta
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend-backend communication
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-only-secret-change-me')
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true',
+)
 
 # Database setup
 DATABASE = 'auto_shop.db'
@@ -63,11 +73,72 @@ DEFAULT_MECHANICS = [
 
 LEGACY_DEFAULT_MECHANIC_IDS = {'mike', 'sarah', 'david'}
 
+ROLE_ADMIN = 'admin'
+ROLE_FRONTDESK = 'frontdesk'
+ROLE_MECHANIC = 'mechanic'
+VALID_ROLES = {ROLE_ADMIN, ROLE_FRONTDESK, ROLE_MECHANIC}
+
+DEFAULT_SYSTEM_USERS = [
+    {
+        'email': 'admin@autoshop.local',
+        'password': 'Admin123!',
+        'role': ROLE_ADMIN,
+        'name': 'System Admin'
+    },
+    {
+        'email': 'frontdesk@autoshop.local',
+        'password': 'Frontdesk123!',
+        'role': ROLE_FRONTDESK,
+        'name': 'Front Desk'
+    },
+    {
+        'email': 'mechanic@autoshop.local',
+        'password': 'Mechanic123!',
+        'role': ROLE_MECHANIC,
+        'name': 'Lead Mechanic',
+        'mechanic_id': 'ajith-mathew'
+    },
+]
+
 def get_db_connection():
     """Create a database connection"""
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row  # Return rows as dictionaries
     return conn
+
+
+def hash_password(plain_password):
+    return crypt.crypt(plain_password, crypt.mksalt(crypt.METHOD_BLOWFISH))
+
+
+def verify_password(plain_password, password_hash):
+    return crypt.crypt(plain_password, password_hash) == password_hash
+
+
+def login_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not session.get('user_id'):
+            return redirect(url_for('login_page'))
+        return func(*args, **kwargs)
+    return wrapper
+
+
+def roles_required(*allowed_roles):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if not session.get('user_id'):
+                return redirect(url_for('login_page'))
+
+            if session.get('role') not in allowed_roles:
+                return jsonify({'success': False, 'error': 'Forbidden'}), 403
+
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 def init_db():
     """Initialize the database with tables"""
@@ -111,6 +182,23 @@ def init_db():
             specialization TEXT
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'frontdesk', 'mechanic')),
+            name TEXT NOT NULL,
+            active INTEGER DEFAULT 1,
+            mechanic_id TEXT
+        )
+    ''')
+
+    cursor.execute("PRAGMA table_info(users)")
+    user_columns = {row['name'] for row in cursor.fetchall()}
+    if 'mechanic_id' not in user_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN mechanic_id TEXT")
     
     # Create time_slots table to track availability
     cursor.execute('''
@@ -149,9 +237,301 @@ def init_db():
                 VALUES (?, ?, ?, ?, ?)
             ''', DEFAULT_MECHANICS)
             conn.commit()
+
+    cursor.execute('SELECT COUNT(*) as count FROM users')
+    existing_user_count = cursor.fetchone()['count']
+    if existing_user_count == 0:
+        for user in DEFAULT_SYSTEM_USERS:
+            cursor.execute(
+                '''
+                INSERT INTO users (email, password_hash, role, name, active, mechanic_id)
+                VALUES (?, ?, ?, ?, 1, ?)
+                ''',
+                (
+                    user['email'],
+                    hash_password(user['password']),
+                    user['role'],
+                    user['name'],
+                    user.get('mechanic_id')
+                )
+            )
+        conn.commit()
     
     conn.close()
     print("Database initialized successfully!")
+
+
+def _normalize_role(role):
+    if not role:
+        return ''
+    return role.strip().lower().replace(' ', '')
+
+
+def _sanitize_email(email):
+    return (email or '').strip().lower()
+
+
+def _normalize_active(value):
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, int):
+        return 1 if value else 0
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {'1', 'true', 'yes', 'active'}:
+            return 1
+        if lowered in {'0', 'false', 'no', 'inactive'}:
+            return 0
+    return None
+
+
+
+
+@app.route('/login', methods=['GET'])
+def login_page():
+    if session.get('user_id'):
+        if session.get('role') == ROLE_MECHANIC:
+            return redirect('/mechanic/dashboard')
+        return redirect('/admin/dashboard')
+    return render_template('login.html')
+
+
+@app.route('/auth/login', methods=['POST'])
+def login():
+    email = (request.form.get('email') or '').strip().lower()
+    password = request.form.get('password') or ''
+    selected_role = _normalize_role(request.form.get('role'))
+
+    if not email or not password or selected_role not in VALID_ROLES:
+        return render_template('login.html', error='Invalid credentials or role'), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        SELECT id, email, password_hash, role, name, active, mechanic_id
+        FROM users
+        WHERE email = ?
+        ''',
+        (email,)
+    )
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user or not int(user['active']) or not verify_password(password, user['password_hash']) or user['role'] != selected_role:
+        return render_template('login.html', error='Invalid credentials or role'), 401
+
+    session.clear()
+    session['user_id'] = user['id']
+    session['role'] = user['role']
+    session['name'] = user['name']
+    session['mechanic_id'] = user['mechanic_id']
+
+    if user['role'] == ROLE_MECHANIC:
+        return redirect('/mechanic/dashboard')
+    return redirect('/admin/dashboard')
+
+
+@app.route('/logout', methods=['GET'])
+def logout():
+    session.clear()
+    return redirect('/login')
+
+
+@app.route('/admin/dashboard', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
+def admin_dashboard():
+    return render_template(
+        'dashboard.html',
+        title='Admin Dashboard',
+        user_name=session.get('name', 'User'),
+        role_label='Admin' if session.get('role') == ROLE_ADMIN else 'Front Desk',
+        allowed_area='booking + scheduling',
+        current_role=session.get('role'),
+    )
+
+
+@app.route('/admin/settings', methods=['GET'])
+@roles_required(ROLE_ADMIN)
+def admin_settings():
+    return jsonify({'success': True, 'message': 'Admin-only settings endpoint'})
+
+
+@app.route('/admin/users', methods=['GET'])
+@roles_required(ROLE_ADMIN)
+def admin_users_page():
+    return render_template('user_management.html', user_name=session.get('name', 'Admin'))
+
+
+@app.route('/api/admin/users', methods=['GET'])
+@roles_required(ROLE_ADMIN)
+def admin_list_users():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, email, role, name, active, mechanic_id
+        FROM users
+        ORDER BY id ASC
+    ''')
+    users = [dict(row) for row in cursor.fetchall()]
+
+    cursor.execute('SELECT mechanic_id, name FROM mechanics ORDER BY name ASC')
+    mechanics = [dict(row) for row in cursor.fetchall()]
+
+    conn.close()
+    return jsonify({'success': True, 'users': users, 'mechanics': mechanics})
+
+
+@app.route('/api/admin/users', methods=['POST'])
+@roles_required(ROLE_ADMIN)
+def admin_create_user():
+    payload = request.json or {}
+
+    email = _sanitize_email(payload.get('email'))
+    password = payload.get('password') or ''
+    role = _normalize_role(payload.get('role'))
+    name = (payload.get('name') or '').strip()
+    active = _normalize_active(payload.get('active'))
+    mechanic_id = (payload.get('mechanic_id') or '').strip() or None
+
+    if not email or '@' not in email or not password or not name or role not in VALID_ROLES:
+        return jsonify({'success': False, 'error': 'Invalid user data'}), 400
+
+    if len(password) < 8:
+        return jsonify({'success': False, 'error': 'Password must be at least 8 characters'}), 400
+
+    if active is None:
+        active = 1
+
+    if role != ROLE_MECHANIC:
+        mechanic_id = None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if mechanic_id:
+        cursor.execute('SELECT 1 FROM mechanics WHERE mechanic_id = ?', (mechanic_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid mechanic_id'}), 400
+
+    try:
+        cursor.execute(
+            '''
+            INSERT INTO users (email, password_hash, role, name, active, mechanic_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ''',
+            (email, hash_password(password), role, name, active, mechanic_id)
+        )
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({'success': False, 'error': 'Email already exists'}), 409
+
+    user_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'message': 'User created', 'user_id': user_id}), 201
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@roles_required(ROLE_ADMIN)
+def admin_update_user(user_id):
+    payload = request.json or {}
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+    existing = cursor.fetchone()
+    if not existing:
+        conn.close()
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    updates = []
+    params = []
+
+    if 'name' in payload:
+        name = (payload.get('name') or '').strip()
+        if not name:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Name is required'}), 400
+        updates.append('name = ?')
+        params.append(name)
+
+    if 'email' in payload:
+        email = _sanitize_email(payload.get('email'))
+        if not email or '@' not in email:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid email'}), 400
+        updates.append('email = ?')
+        params.append(email)
+
+    if 'role' in payload:
+        role = _normalize_role(payload.get('role'))
+        if role not in VALID_ROLES:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid role'}), 400
+        updates.append('role = ?')
+        params.append(role)
+
+    if 'active' in payload:
+        active = _normalize_active(payload.get('active'))
+        if active is None:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid active value'}), 400
+        updates.append('active = ?')
+        params.append(active)
+
+    if 'password' in payload and payload.get('password'):
+        password = payload.get('password')
+        if len(password) < 8:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Password must be at least 8 characters'}), 400
+        updates.append('password_hash = ?')
+        params.append(hash_password(password))
+
+    if 'mechanic_id' in payload or 'role' in payload:
+        role_after = _normalize_role(payload.get('role')) if 'role' in payload else existing['role']
+        mechanic_id = (payload.get('mechanic_id') or '').strip() if 'mechanic_id' in payload else (existing['mechanic_id'] or '')
+        mechanic_id = mechanic_id or None
+
+        if role_after != ROLE_MECHANIC:
+            mechanic_id = None
+        elif mechanic_id:
+            cursor.execute('SELECT 1 FROM mechanics WHERE mechanic_id = ?', (mechanic_id,))
+            if not cursor.fetchone():
+                conn.close()
+                return jsonify({'success': False, 'error': 'Invalid mechanic_id'}), 400
+
+        updates.append('mechanic_id = ?')
+        params.append(mechanic_id)
+
+    if not updates:
+        conn.close()
+        return jsonify({'success': False, 'error': 'No fields to update'}), 400
+
+    params.append(user_id)
+    try:
+        cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({'success': False, 'error': 'Email already exists'}), 409
+
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'message': 'User updated'})
+
+
+@app.route('/mechanic/dashboard', methods=['GET'])
+@roles_required(ROLE_MECHANIC)
+def mechanic_dashboard():
+    return render_template(
+        'dashboard.html',
+        title='Mechanic Dashboard',
+        user_name=session.get('name', 'Mechanic'),
+        role_label='Mechanic',
+        allowed_area='assigned jobs only',
+    )
 
 
 def resolve_target_date(raw_date):
@@ -223,6 +603,7 @@ def build_slot_availability(cursor, date, mechanic_id=None):
 # ============================================
 
 @app.route('/api/bookings', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def get_bookings():
     """Get all bookings or filter by date/mechanic"""
     date = request.args.get('date')
@@ -261,6 +642,7 @@ def get_bookings():
 
 
 @app.route('/api/bookings', methods=['POST'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def create_booking():
     """Create a new booking"""
     data = request.json
@@ -353,6 +735,7 @@ def create_booking():
 
 
 @app.route('/api/bookings/<int:booking_id>', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def get_booking(booking_id):
     """Get a specific booking by ID"""
     conn = get_db_connection()
@@ -375,6 +758,7 @@ def get_booking(booking_id):
 
 
 @app.route('/api/bookings/<int:booking_id>', methods=['PUT'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def update_booking(booking_id):
     """Update a booking (status, time, etc.)"""
     data = request.json
@@ -424,6 +808,7 @@ def update_booking(booking_id):
 
 
 @app.route('/api/bookings/<int:booking_id>', methods=['DELETE'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def delete_booking(booking_id):
     """Delete a booking (or mark as cancelled)"""
     conn = get_db_connection()
@@ -455,6 +840,7 @@ def delete_booking(booking_id):
 # ============================================
 
 @app.route('/api/mechanics', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def get_mechanics():
     """Get all mechanics"""
     conn = get_db_connection()
@@ -471,6 +857,7 @@ def get_mechanics():
 
 
 @app.route('/api/mechanics/<mechanic_id>/bookings', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def get_mechanic_bookings(mechanic_id):
     """Get all bookings for a specific mechanic"""
     date = request.args.get('date')
@@ -499,11 +886,61 @@ def get_mechanic_bookings(mechanic_id):
     })
 
 
+
+@app.route('/api/mechanic/jobs', methods=['GET'])
+@roles_required(ROLE_MECHANIC)
+def get_assigned_jobs():
+    mechanic_id = session.get('mechanic_id')
+    if not mechanic_id:
+        return jsonify({'success': False, 'error': 'Mechanic account is not mapped'}), 400
+
+    date = request.args.get('date')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = 'SELECT * FROM bookings WHERE mechanic = ?'
+    params = [mechanic_id]
+    if date:
+        query += ' AND booking_date = ?'
+        params.append(date)
+    query += ' ORDER BY booking_date ASC, time_slot ASC'
+    cursor.execute(query, params)
+    bookings = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+
+    return jsonify({'success': True, 'mechanic_id': mechanic_id, 'jobs': bookings})
+
+
+@app.route('/api/mechanic/jobs/<int:booking_id>/status', methods=['PUT'])
+@roles_required(ROLE_MECHANIC)
+def update_mechanic_job_status(booking_id):
+    new_status = (request.json or {}).get('status', '').strip().lower()
+    if new_status not in {'completed', 'cancelled'}:
+        return jsonify({'success': False, 'error': 'Invalid status'}), 400
+
+    mechanic_id = session.get('mechanic_id')
+    if not mechanic_id:
+        return jsonify({'success': False, 'error': 'Mechanic account is not mapped'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE bookings SET status = ? WHERE id = ? AND mechanic = ?', (new_status, booking_id, mechanic_id))
+    if cursor.rowcount == 0:
+        conn.close()
+        return jsonify({'success': False, 'error': 'Booking not found'}), 404
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'message': 'Job status updated'})
+
+
 # ============================================
 # TIME SLOT ENDPOINTS
 # ============================================
 
 @app.route('/api/timeslots', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def get_available_slots():
     """Get available time slots for a specific date"""
     date = resolve_target_date(request.args.get('date'))
@@ -528,6 +965,7 @@ def get_available_slots():
 # ============================================
 
 @app.route('/api/stats', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def get_stats():
     """Get statistics for dashboard"""
     date = resolve_target_date(request.args.get('date'))
@@ -569,6 +1007,7 @@ def get_stats():
 
 
 @app.route('/api/dashboard', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def get_dashboard_data():
     """Get bookings, stats, and time slot availability in one request."""
     date = resolve_target_date(request.args.get('date'))

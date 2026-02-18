@@ -33,6 +33,11 @@ class SlotAvailabilityTests(unittest.TestCase):
         conn.close()
 
         self.client = scheduler_app.app.test_client()
+        self.client.post(
+            '/auth/login',
+            data={'email': 'admin@autoshop.local', 'password': 'Admin123!', 'role': 'admin'},
+            follow_redirects=False,
+        )
 
     def tearDown(self):
         if os.path.exists(self._db_file.name):
