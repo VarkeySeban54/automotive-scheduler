@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>User Management</title>
+    <style>
+        body { font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }
+        .container { max-width: 980px; margin: 0 auto; padding: 20px; }
+        .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+        h1, h2 { margin-top: 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+        label { display:block; font-size: .9rem; margin-bottom:4px; color:#334155; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; }
+        button { padding: 10px 12px; border: 0; border-radius: 8px; background:#f5cc1f; color:#111827; font-weight:700; cursor:pointer; }
+        table { width:100%; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid #e2e8f0; padding: 8px; text-align: left; font-size: .92rem; }
+        .actions { display:flex; gap:8px; flex-wrap: wrap; }
+        .muted { color:#64748b; }
+        .message { margin-top: 10px; font-weight: 600; }
+        .error { color: #b91c1c; }
+        .ok { color: #166534; }
+        .top-links { display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <div class="top-links">
+            <h1>User Management</h1>
+            <div><a href="/admin/dashboard">Back to dashboard</a> · <a href="/logout">Logout</a></div>
+        </div>
+
+        <section class="card">
+            <h2>Create User</h2>
+            <form id="createForm">
+                <div class="grid">
+                    <div><label for="name">Name</label><input id="name" required /></div>
+                    <div><label for="email">Email</label><input id="email" type="email" required /></div>
+                    <div><label for="password">Password</label><input id="password" type="password" minlength="8" required /></div>
+                    <div>
+                        <label for="role">Role</label>
+                        <select id="role" required>
+                            <option value="admin">Admin</option>
+                            <option value="frontdesk">Front Desk</option>
+                            <option value="mechanic">Mechanic</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="active">Status</label>
+                        <select id="active">
+                            <option value="1">Active</option>
+                            <option value="0">Inactive</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="mechanicId">Mechanic Mapping (for mechanic role)</label>
+                        <select id="mechanicId"><option value="">None</option></select>
+                    </div>
+                </div>
+                <div style="margin-top: 12px;"><button type="submit">Create User</button></div>
+                <p class="message" id="createMessage"></p>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2>Existing Users</h2>
+            <p class="muted">Edit name/role/status/mechanic mapping inline and save.</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Mechanic ID</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="usersBody"></tbody>
+            </table>
+            <p class="message" id="tableMessage"></p>
+        </section>
+    </main>
+
+    <script>
+        const usersBody = document.getElementById('usersBody');
+        const createMessage = document.getElementById('createMessage');
+        const tableMessage = document.getElementById('tableMessage');
+        const mechanicSelect = document.getElementById('mechanicId');
+
+        function message(el, text, isError=false) {
+            el.textContent = text;
+            el.className = `message ${isError ? 'error' : 'ok'}`;
+        }
+
+        function mechanicOptions(mechanics, selected='') {
+            const options = ['<option value="">None</option>'];
+            for (const m of mechanics) {
+                options.push(`<option value="${m.mechanic_id}" ${selected===m.mechanic_id?'selected':''}>${m.name} (${m.mechanic_id})</option>`);
+            }
+            return options.join('');
+        }
+
+        async function loadUsers() {
+            const res = await fetch('/api/admin/users');
+            const data = await res.json();
+            if (!data.success) {
+                message(tableMessage, data.error || 'Failed to load users', true);
+                return;
+            }
+
+            mechanicSelect.innerHTML = mechanicOptions(data.mechanics);
+            usersBody.innerHTML = data.users.map(user => `
+                <tr data-user-id="${user.id}">
+                    <td>${user.id}</td>
+                    <td><input data-field="name" value="${user.name}" /></td>
+                    <td><input data-field="email" value="${user.email}" /></td>
+                    <td>
+                        <select data-field="role">
+                            <option value="admin" ${user.role==='admin'?'selected':''}>Admin</option>
+                            <option value="frontdesk" ${user.role==='frontdesk'?'selected':''}>Front Desk</option>
+                            <option value="mechanic" ${user.role==='mechanic'?'selected':''}>Mechanic</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select data-field="active">
+                            <option value="1" ${user.active ? 'selected':''}>Active</option>
+                            <option value="0" ${!user.active ? 'selected':''}>Inactive</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select data-field="mechanic_id">
+                            ${mechanicOptions(data.mechanics, user.mechanic_id || '')}
+                        </select>
+                    </td>
+                    <td class="actions">
+                        <button onclick="saveUser(${user.id})">Save</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function saveUser(userId) {
+            const row = document.querySelector(`tr[data-user-id='${userId}']`);
+            const payload = {
+                name: row.querySelector('[data-field="name"]').value,
+                email: row.querySelector('[data-field="email"]').value,
+                role: row.querySelector('[data-field="role"]').value,
+                active: row.querySelector('[data-field="active"]').value,
+                mechanic_id: row.querySelector('[data-field="mechanic_id"]').value,
+            };
+
+            const res = await fetch(`/api/admin/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                message(tableMessage, data.error || 'Failed to update user', true);
+                return;
+            }
+            message(tableMessage, 'User updated');
+            await loadUsers();
+        }
+
+        document.getElementById('createForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const payload = {
+                name: document.getElementById('name').value,
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value,
+                role: document.getElementById('role').value,
+                active: document.getElementById('active').value,
+                mechanic_id: document.getElementById('mechanicId').value,
+            };
+
+            const res = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                message(createMessage, data.error || 'Failed to create user', true);
+                return;
+            }
+            message(createMessage, 'User created successfully');
+            event.target.reset();
+            await loadUsers();
+        });
+
+        loadUsers().catch(() => message(tableMessage, 'Error loading user data', true));
+    </script>
+</body>
+</html>
