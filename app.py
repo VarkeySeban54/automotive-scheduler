@@ -2,8 +2,10 @@ from functools import wraps
 import os
 import sqlite3
 import json
+import hashlib
+import hmac
+import secrets
 
-import crypt
 from flask import Flask, request, jsonify, redirect, render_template, session, url_for
 from flask_cors import CORS
 from datetime import datetime, timedelta
@@ -108,10 +110,36 @@ def get_db_connection():
 
 
 def hash_password(plain_password):
-    return crypt.crypt(plain_password, crypt.mksalt(crypt.METHOD_BLOWFISH))
+    iterations = 600000
+    salt = secrets.token_hex(16)
+    password_hash = hashlib.pbkdf2_hmac(
+        'sha256',
+        plain_password.encode('utf-8'),
+        salt.encode('utf-8'),
+        iterations,
+    ).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${password_hash}"
 
 
 def verify_password(plain_password, password_hash):
+    if password_hash.startswith('pbkdf2_sha256$'):
+        try:
+            _, iterations_raw, salt, expected_hash = password_hash.split('$', 3)
+            calculated_hash = hashlib.pbkdf2_hmac(
+                'sha256',
+                plain_password.encode('utf-8'),
+                salt.encode('utf-8'),
+                int(iterations_raw),
+            ).hex()
+        except (TypeError, ValueError):
+            return False
+        return hmac.compare_digest(calculated_hash, expected_hash)
+
+    # Legacy fallback for deployments that already have crypt hashes.
+    try:
+        import crypt
+    except ImportError:
+        return False
     return crypt.crypt(plain_password, password_hash) == password_hash
 
 
