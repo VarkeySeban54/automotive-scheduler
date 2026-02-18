@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import secrets
 
-from flask import Flask, request, jsonify, redirect, render_template, session, url_for
+from flask import Flask, request, jsonify, redirect, render_template, session, url_for, send_from_directory
 from flask_cors import CORS
 from datetime import datetime, timedelta
 
@@ -147,6 +147,8 @@ def login_required(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         if not session.get('user_id'):
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': 'Authentication required'}), 401
             return redirect(url_for('login_page'))
         return func(*args, **kwargs)
     return wrapper
@@ -157,6 +159,8 @@ def roles_required(*allowed_roles):
         @wraps(func)
         def wrapper(*args, **kwargs):
             if not session.get('user_id'):
+                if request.path.startswith('/api/'):
+                    return jsonify({'success': False, 'error': 'Authentication required'}), 401
                 return redirect(url_for('login_page'))
 
             if session.get('role') not in allowed_roles:
@@ -369,14 +373,7 @@ def logout():
 @app.route('/admin/dashboard', methods=['GET'])
 @roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def admin_dashboard():
-    return render_template(
-        'dashboard.html',
-        title='Admin Dashboard',
-        user_name=session.get('name', 'User'),
-        role_label='Admin' if session.get('role') == ROLE_ADMIN else 'Front Desk',
-        allowed_area='booking + scheduling',
-        current_role=session.get('role'),
-    )
+    return send_from_directory(app.root_path, 'index.html')
 
 
 @app.route('/admin/settings', methods=['GET'])
@@ -1102,6 +1099,12 @@ def health_check():
 
 @app.route('/', methods=['GET'])
 def home():
+    """Redirect visitors to the login UI."""
+    return redirect(url_for('login_page'))
+
+
+@app.route('/api/docs', methods=['GET'])
+def api_docs():
     """API documentation"""
     return jsonify({
         'message': 'Auto Shop Scheduling API',

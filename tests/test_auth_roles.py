@@ -65,8 +65,8 @@ class AuthRoleTests(unittest.TestCase):
 
     def test_route_protection_and_logout(self):
         unauth = self.client.get('/api/dashboard', follow_redirects=False)
-        self.assertEqual(unauth.status_code, 302)
-        self.assertTrue(unauth.headers['Location'].endswith('/login'))
+        self.assertEqual(unauth.status_code, 401)
+        self.assertEqual(unauth.get_json()['error'], 'Authentication required')
 
         self.client.post(
             '/auth/login',
@@ -81,8 +81,8 @@ class AuthRoleTests(unittest.TestCase):
         self.assertTrue(logout.headers['Location'].endswith('/login'))
 
         after_logout = self.client.get('/api/dashboard', follow_redirects=False)
-        self.assertEqual(after_logout.status_code, 302)
-        self.assertTrue(after_logout.headers['Location'].endswith('/login'))
+        self.assertEqual(after_logout.status_code, 401)
+        self.assertEqual(after_logout.get_json()['error'], 'Authentication required')
 
     def test_passwords_are_hashed(self):
         conn = scheduler_app.get_db_connection()
@@ -93,7 +93,7 @@ class AuthRoleTests(unittest.TestCase):
 
         self.assertIsNotNone(row)
         self.assertNotEqual(row['password_hash'], 'Admin123!')
-        self.assertTrue(row['password_hash'].startswith('$2'))
+        self.assertTrue(row['password_hash'].startswith('pbkdf2_sha256$'))
 
 
     def test_admin_user_management_api_crud(self):
