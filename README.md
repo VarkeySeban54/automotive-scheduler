@@ -27,6 +27,19 @@ python app.py
 
 The server will start on `http://localhost:5000`
 
+Open `http://localhost:5000/login` to sign in to the web dashboard.
+
+
+### 3.1 Default Login Accounts
+
+The app seeds these users on first run:
+
+- Admin: `admin@autoshop.local` / `Admin123!`
+- Front desk: `frontdesk@autoshop.local` / `Frontdesk123!`
+- Mechanic: `mechanic@autoshop.local` / `Mechanic123!`
+
+Admin/front desk users are redirected to `/admin/dashboard` after login.
+
 ### 3. Database Initialization
 
 The database is automatically created on first run with:
@@ -34,6 +47,13 @@ The database is automatically created on first run with:
 - `mechanics` table
 - `time_slots` table
 - 3 default mechanics (Mike, Sarah, David)
+
+## UI Routes
+
+- `GET /login` – login page
+- `GET /admin/dashboard` – booking + scheduling dashboard (admin/front desk only)
+- `GET /mechanic/dashboard` – mechanic-only summary page
+- `GET /logout` – clear session and return to login
 
 ## API Endpoints
 
@@ -258,6 +278,8 @@ PORT=5000
 ## Testing the API
 
 Use curl or Postman to test endpoints:
+
+- API docs JSON: `GET /api/docs`
 
 ```bash
 # Health check
