@@ -17,6 +17,13 @@ ALL_TIME_SLOTS = [
 
 NON_BLOCKING_BOOKING_STATUSES = ('cancelled', 'completed')
 
+DEFAULT_MECHANICS = [
+    ('ajith-mathew', 'Ajith Mathew', 'ajith@autoshop.com', '555-0101', 'Engine & Transmission'),
+    ('alvin-antony', 'Alvin Antony', 'alvin@autoshop.com', '555-0102', 'Brakes & Suspension')
+]
+
+LEGACY_DEFAULT_MECHANIC_IDS = {'mike', 'sarah', 'david'}
+
 def get_db_connection():
     """Create a database connection"""
     conn = sqlite3.connect(DATABASE)
@@ -71,19 +78,29 @@ def init_db():
     
     conn.commit()
     
-    # Insert default mechanics if table is empty
-    cursor.execute('SELECT COUNT(*) FROM mechanics')
-    if cursor.fetchone()[0] == 0:
-        mechanics = [
-            ('mike', 'Mike Johnson', 'mike@autoshop.com', '555-0101', 'Engine & Transmission'),
-            ('sarah', 'Sarah Williams', 'sarah@autoshop.com', '555-0102', 'Brakes & Suspension'),
-            ('david', 'David Brown', 'david@autoshop.com', '555-0103', 'Electrical & Diagnostics')
-        ]
+    # Insert/migrate default mechanics to match the admin panel's configured mechanics.
+    cursor.execute('SELECT mechanic_id FROM mechanics')
+    current_mechanics = {row['mechanic_id'] for row in cursor.fetchall()}
+
+    if not current_mechanics:
         cursor.executemany('''
             INSERT INTO mechanics (mechanic_id, name, email, phone, specialization)
             VALUES (?, ?, ?, ?, ?)
-        ''', mechanics)
+        ''', DEFAULT_MECHANICS)
         conn.commit()
+    elif current_mechanics == LEGACY_DEFAULT_MECHANIC_IDS:
+        cursor.execute('''
+            SELECT COUNT(*) as count FROM bookings WHERE mechanic IN (?, ?, ?)
+        ''', tuple(LEGACY_DEFAULT_MECHANIC_IDS))
+        legacy_booking_count = cursor.fetchone()['count']
+
+        if legacy_booking_count == 0:
+            cursor.execute('DELETE FROM mechanics')
+            cursor.executemany('''
+                INSERT INTO mechanics (mechanic_id, name, email, phone, specialization)
+                VALUES (?, ?, ?, ?, ?)
+            ''', DEFAULT_MECHANICS)
+            conn.commit()
     
     conn.close()
     print("Database initialized successfully!")
