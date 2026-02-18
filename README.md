@@ -102,6 +102,7 @@ GET /api/mechanics/mike/bookings?date=2024-03-15
 **Get available time slots**
 ```http
 GET /api/timeslots?date=2024-03-15
+GET /api/timeslots?date=2024-03-15&mechanic=mike
 GET /api/timeslots   # defaults to today if date is omitted
 ```
 
@@ -111,8 +112,8 @@ Returns:
   "success": true,
   "date": "2024-03-15",
   "slots": [
-    {"time": "8:00 AM", "available": true},
-    {"time": "9:00 AM", "available": false},
+    {"time": "8:00 AM", "available": true, "remainingCapacity": 2},
+    {"time": "9:00 AM", "available": false, "remainingCapacity": 0},
     ...
   ]
 }
@@ -159,7 +160,7 @@ Returns:
     "completed": 2
   },
   "slots": [
-    {"time": "8:00 AM", "available": true}
+    {"time": "8:00 AM", "available": true, "remainingCapacity": 2}
   ]
 }
 ```
