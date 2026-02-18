@@ -198,52 +198,166 @@
             background: #ffe48a;
         }
         
-        .time-slots {
+        .day-schedule-grid {
+            border: 1px solid #e9e9e9;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #fff;
+        }
+
+        .day-grid-header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: #fffaf0;
+            border-bottom: 1px solid #ece4cf;
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
+            grid-template-columns: 84px 1fr;
         }
-        
-        .time-slot {
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: white;
-        }
-        
-        .time-slot:hover:not(.booked) {
-            border-color: var(--brand-yellow-dark);
-            transform: translateY(-2px);
-        }
-        
-        .time-slot.selected {
-            background: var(--brand-yellow);
-            color: #2d2200;
-            border-color: var(--brand-yellow-dark);
-        }
-        
-        .time-slot.booked {
-            background: #e74c3c;
-            color: white;
-            border-color: #e74c3c;
-            cursor: not-allowed;
-            pointer-events: none;
-            opacity: 0.8;
-        }
-        
-        .time-slot .time {
+
+        .day-grid-header-time {
+            border-right: 1px solid #ece4cf;
+            font-size: 0.75em;
+            color: #7d6f42;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 42px;
             font-weight: 600;
-            font-size: 1.1em;
-            margin-bottom: 5px;
         }
-        
-        .time-slot .status {
-            font-size: 0.85em;
-            opacity: 0.9;
+
+        .day-grid-header-columns {
+            display: grid;
+            gap: 0;
+        }
+
+        .day-grid-column-label {
+            min-height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-right: 1px solid #ece4cf;
+            font-weight: 600;
+            color: var(--brand-text);
+            padding: 0 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .day-grid-scroll {
+            max-height: calc(100vh - 270px);
+            overflow: auto;
+        }
+
+        .day-grid-body {
+            display: grid;
+            grid-template-columns: 84px 1fr;
+            min-height: 400px;
+        }
+
+        .time-labels {
+            position: sticky;
+            left: 0;
+            z-index: 10;
+            background: #fff;
+            border-right: 1px solid #ece4cf;
+        }
+
+        .time-label {
+            height: 48px;
+            font-size: 0.82em;
+            color: #7f8c8d;
+            padding: 4px 8px;
+            border-bottom: 1px solid #f3f3f3;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-end;
+        }
+
+        .timeline {
+            position: relative;
+            min-width: 600px;
+        }
+
+        .timeline-grid {
+            position: relative;
+            display: grid;
+        }
+
+        .timeline-slot-row {
+            height: 48px;
+            border-bottom: 1px solid #f1f1f1;
+            display: grid;
+        }
+
+        .timeline-slot-cell {
+            border-right: 1px solid #f1f1f1;
+            cursor: pointer;
+            transition: background 0.2s;
+            position: relative;
+        }
+
+        .timeline-slot-cell:hover {
+            background: #fff9e5;
+        }
+
+        .timeline-slot-cell.selected {
+            background: #ffe49a;
+            box-shadow: inset 0 0 0 2px #e6b300;
+        }
+
+        .timeline-slot-row.fully-booked .timeline-slot-cell {
+            background: #f7f7f7;
+        }
+
+        .timeline-slot-row.fully-booked .timeline-slot-cell::after {
+            content: 'Fully booked';
+            position: absolute;
+            right: 8px;
+            top: 4px;
+            font-size: 0.68em;
+            color: #8c8c8c;
+        }
+
+        .events-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .schedule-event {
+            position: absolute;
+            border-radius: 8px;
+            padding: 8px;
+            font-size: 0.78em;
+            line-height: 1.3;
+            border-left: 4px solid;
+            color: #2f2f2f;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+            overflow: hidden;
+            pointer-events: auto;
+            background: #fff8db;
+        }
+
+        .schedule-event:focus {
+            outline: 2px solid #2f2a1f;
+            outline-offset: 1px;
+        }
+
+        .event-pending { border-left-color: #f4c430; background: #fff9e3; }
+        .event-completed { border-left-color: #17a2b8; background: #e9f8fb; }
+        .event-cancelled { border-left-color: #8a8a8a; background: #f1f1f1; }
+
+        .event-title { font-weight: 700; margin-bottom: 4px; }
+        .event-meta { color: #595959; }
+
+        .slot-help {
+            margin-top: 10px;
+            color: #7d6f42;
+            font-size: 0.84em;
         }
         
         .bookings-list {
@@ -427,6 +541,20 @@
             border-radius: 8px;
             margin-bottom: 20px;
         }
+
+        @media (max-width: 900px) {
+            .booking-panel {
+                width: 340px;
+            }
+
+            .timeline {
+                min-width: 760px;
+            }
+
+            .day-grid-scroll {
+                max-height: calc(100vh - 300px);
+            }
+        }
     </style>
 </head>
 <body>
@@ -526,13 +654,14 @@
                     </div>
                 </div>
                 
-                <div class="time-slots" id="timeSlots">
-                    <div class="loading">Loading available time slots...</div>
+                <div id="timeSlots" class="day-schedule-grid">
+                    <div class="loading">Loading schedule grid...</div>
                 </div>
+                <p class="slot-help">Tip: Click an available 30-minute slot to prefill the booking form.</p>
             </div>
             
             <div class="bookings-list">
-                <h2>📋 Today's Appointments</h2>
+                <h2>📋 Agenda</h2>
                 <div id="bookingsList">
                     <div class="loading">Loading appointments...</div>
                 </div>
@@ -568,6 +697,11 @@
     <script>
         // API Configuration
         const API_BASE_URL = 'http://localhost:5000/api';
+        // Schedule grid configuration (shared-ready constants)
+        const SLOT_MINUTES = 30;
+        const DAY_START = '08:00';
+        const DAY_END = '18:00';
+        const SLOT_ROW_HEIGHT = 48;
         
         // Global state
         let currentDate = new Date();
@@ -689,7 +823,7 @@
                     throw new Error('Failed to load dashboard data');
                 }
 
-                renderTimeSlots(slotsData.slots);
+                renderDayScheduleGrid(dashboardData.bookings, slotsData.slots);
                 displayBookings(dashboardData.bookings);
                 displayMechanicStats(dashboardData.stats);
                 displayMechanicCards(dashboardData.bookings);
@@ -700,41 +834,223 @@
             }
         }
 
-        // Load available time slots from API
         async function loadTimeSlots() {
             await loadDashboardData();
-        }
-
-        function renderTimeSlots(slots) {
-            const container = document.getElementById('timeSlots');
-            container.innerHTML = '';
-
-            slots.forEach(slot => {
-                const slotDiv = document.createElement('div');
-                slotDiv.className = `time-slot ${!slot.available ? 'booked' : ''}`;
-                slotDiv.setAttribute('aria-disabled', slot.available ? 'false' : 'true');
-
-                const slotStatus = slot.available
-                    ? `Available (${slot.remainingCapacity} left)`
-                    : 'Fully booked';
-
-                slotDiv.innerHTML = `
-                    <div class="time">${slot.time}</div>
-                    <div class="status">${slotStatus}</div>
-                `;
-
-                if (slot.available) {
-                    slotDiv.onclick = () => selectTimeSlot(slot.time, slotDiv);
-                }
-
-                container.appendChild(slotDiv);
-            });
         }
 
         async function loadBookings() {
             await loadDashboardData();
         }
 
+        function parseTimeLabelToMinutes(label) {
+            const [timePart, meridiem] = label.split(' ');
+            const [hoursRaw, minutesRaw] = timePart.split(':').map(Number);
+            let hours = hoursRaw % 12;
+            if (meridiem === 'PM') {
+                hours += 12;
+            }
+            return hours * 60 + minutesRaw;
+        }
+
+        function formatMinutesToLabel(totalMinutes) {
+            const hours24 = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+            const suffix = hours24 >= 12 ? 'PM' : 'AM';
+            const hour12 = ((hours24 + 11) % 12) + 1;
+            return `${hour12}:${String(minutes).padStart(2, '0')} ${suffix}`;
+        }
+
+        function parseClockTimeToMinutes(clockTime) {
+            const [h, m] = clockTime.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        function buildSlotLabels() {
+            const labels = [];
+            for (let minutes = parseClockTimeToMinutes(DAY_START); minutes < parseClockTimeToMinutes(DAY_END); minutes += SLOT_MINUTES) {
+                labels.push(formatMinutesToLabel(minutes));
+            }
+            return labels;
+        }
+
+        function estimateDurationMinutes(booking) {
+            const serviceDuration = {
+                'oil-change': 30,
+                'tire-rotation': 30,
+                'inspection': 30,
+                'brake-service': 60,
+                'engine-diagnostic': 60,
+                'transmission': 90,
+                'other': 60
+            };
+            return serviceDuration[booking.service_type] || SLOT_MINUTES;
+        }
+
+        function assignOverlapColumns(events) {
+            const sorted = [...events].sort((a, b) => a.start - b.start);
+            const clusters = [];
+            let active = [];
+
+            sorted.forEach(event => {
+                active = active.filter(a => a.end > event.start);
+                let cluster = clusters.find(c => c.events.some(e => e.end > event.start && e.start < event.end));
+                if (!cluster) {
+                    cluster = { events: [] };
+                    clusters.push(cluster);
+                }
+                cluster.events.push(event);
+                active.push(event);
+            });
+
+            clusters.forEach(cluster => {
+                const activeEvents = [];
+                let maxColumn = 0;
+                cluster.events.sort((a, b) => a.start - b.start).forEach(event => {
+                    for (let i = activeEvents.length - 1; i >= 0; i -= 1) {
+                        if (activeEvents[i].end <= event.start) {
+                            activeEvents.splice(i, 1);
+                        }
+                    }
+
+                    let column = 0;
+                    while (activeEvents.some(a => a.column === column)) {
+                        column += 1;
+                    }
+
+                    event.column = column;
+                    activeEvents.push(event);
+                    maxColumn = Math.max(maxColumn, column + 1);
+                });
+
+                cluster.events.forEach(event => {
+                    event.columnCount = maxColumn;
+                });
+            });
+        }
+
+        function renderDayScheduleGrid(bookings, slots) {
+            const container = document.getElementById('timeSlots');
+            const selectedMechanic = document.getElementById('mechanic').value;
+            const slotLabels = buildSlotLabels();
+            const slotCapacityMap = new Map(slots.map(slot => [slot.time, slot]));
+            const dayStartMinutes = parseClockTimeToMinutes(DAY_START);
+            const dayEndMinutes = parseClockTimeToMinutes(DAY_END);
+
+            const mechanics = selectedMechanic
+                ? [selectedMechanic]
+                : [...new Set(bookings.map(b => b.mechanic))];
+            const columns = mechanics.length ? mechanics : ['shop'];
+
+            container.innerHTML = `
+                <div class="day-grid-header">
+                    <div class="day-grid-header-time">Time</div>
+                    <div class="day-grid-header-columns" id="dayGridColumns"></div>
+                </div>
+                <div class="day-grid-scroll">
+                    <div class="day-grid-body">
+                        <div class="time-labels" id="timeLabels"></div>
+                        <div class="timeline">
+                            <div class="timeline-grid" id="timelineGrid"></div>
+                            <div class="events-layer" id="eventsLayer"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const columnsHeader = container.querySelector('#dayGridColumns');
+            columnsHeader.style.gridTemplateColumns = `repeat(${columns.length}, 1fr)`;
+            columnsHeader.innerHTML = columns
+                .map(c => `<div class="day-grid-column-label">${c === 'shop' ? 'All Mechanics' : getMechanicName(c)}</div>`)
+                .join('');
+
+            const timeLabels = container.querySelector('#timeLabels');
+            timeLabels.innerHTML = slotLabels
+                .map(label => `<div class="time-label">${label}</div>`)
+                .join('');
+
+            const timelineGrid = container.querySelector('#timelineGrid');
+            timelineGrid.style.gridTemplateRows = `repeat(${slotLabels.length}, ${SLOT_ROW_HEIGHT}px)`;
+
+            const rowsHtml = slotLabels.map(label => {
+                const slot = slotCapacityMap.get(label);
+                const fullyBooked = slot && slot.remainingCapacity === 0;
+                const rowClass = fullyBooked ? 'timeline-slot-row fully-booked' : 'timeline-slot-row';
+                const cells = columns.map(col => {
+                    const disabled = slot && selectedMechanic ? !slot.available : fullyBooked;
+                    return `<button type="button" class="timeline-slot-cell" data-time="${label}" data-column="${col}" aria-disabled="${disabled ? 'true' : 'false'}"></button>`;
+                }).join('');
+                return `<div class="${rowClass}" style="grid-template-columns: repeat(${columns.length}, 1fr);">${cells}</div>`;
+            }).join('');
+
+            timelineGrid.innerHTML = rowsHtml;
+
+            timelineGrid.querySelectorAll('.timeline-slot-cell').forEach(cell => {
+                if (cell.getAttribute('aria-disabled') === 'true') {
+                    cell.disabled = true;
+                    return;
+                }
+
+                cell.addEventListener('click', () => {
+                    selectTimeSlot(cell.dataset.time, cell);
+                });
+            });
+
+            const eventsLayer = container.querySelector('#eventsLayer');
+            const colWidth = 100 / columns.length;
+            eventsLayer.style.height = `${slotLabels.length * SLOT_ROW_HEIGHT}px`;
+
+            const normalizedEvents = bookings
+                .filter(booking => !selectedMechanic || booking.mechanic === selectedMechanic)
+                .map(booking => {
+                    const startMinutes = parseTimeLabelToMinutes(booking.time_slot);
+                    const endMinutes = Math.min(startMinutes + estimateDurationMinutes(booking), dayEndMinutes);
+                    return {
+                        booking,
+                        start: startMinutes,
+                        end: endMinutes,
+                        columnKey: selectedMechanic ? selectedMechanic : booking.mechanic
+                    };
+                })
+                .filter(event => event.start >= dayStartMinutes && event.start < dayEndMinutes);
+
+            columns.forEach(columnKey => {
+                const columnEvents = normalizedEvents.filter(event => event.columnKey === columnKey);
+                assignOverlapColumns(columnEvents);
+            });
+
+            const serviceNames = {
+                'oil-change': 'Oil Change',
+                'brake-service': 'Brake Service',
+                'tire-rotation': 'Tire Rotation',
+                'engine-diagnostic': 'Engine Diagnostic',
+                'transmission': 'Transmission Service',
+                'inspection': 'General Inspection',
+                'other': 'Other Service'
+            };
+
+            eventsLayer.innerHTML = normalizedEvents.map(event => {
+                const colIndex = Math.max(columns.indexOf(event.columnKey), 0);
+                const clusterColumns = event.columnCount || 1;
+                const width = colWidth / clusterColumns;
+                const left = colIndex * colWidth + width * (event.column || 0);
+                const top = ((event.start - dayStartMinutes) / SLOT_MINUTES) * SLOT_ROW_HEIGHT + 2;
+                const height = Math.max(((event.end - event.start) / SLOT_MINUTES) * SLOT_ROW_HEIGHT - 4, 36);
+
+                return `
+                    <button
+                        type="button"
+                        tabindex="0"
+                        class="schedule-event event-${event.booking.status}"
+                        style="left: calc(${left}% + 2px); width: calc(${width}% - 6px); top: ${top}px; height: ${height}px;"
+                        aria-label="${event.booking.customer_name}, ${serviceNames[event.booking.service_type] || event.booking.service_type}, ${event.booking.status}"
+                    >
+                        <div class="event-title">${event.booking.customer_name} · ${event.booking.vehicle}</div>
+                        <div class="event-meta">${serviceNames[event.booking.service_type] || event.booking.service_type}</div>
+                        <div class="event-meta">${getMechanicName(event.booking.mechanic)} · ${event.booking.status.toUpperCase()}</div>
+                    </button>
+                `;
+            }).join('');
+        }
 
         function clearSelectedSlot() {
             if (selectedSlotElement) {
@@ -746,7 +1062,7 @@
         }
 
         function selectTimeSlot(time, element) {
-            if (element.classList.contains('booked')) return;
+            if (element.disabled || element.getAttribute('aria-disabled') === 'true') return;
 
             clearSelectedSlot();
 
