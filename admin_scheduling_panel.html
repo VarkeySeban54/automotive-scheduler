@@ -231,6 +231,8 @@
             color: white;
             border-color: #e74c3c;
             cursor: not-allowed;
+            pointer-events: none;
+            opacity: 0.8;
         }
         
         .time-slot .time {
@@ -625,6 +627,12 @@
 
             makeSelect.addEventListener('change', handleMakeChange);
             form.addEventListener('reset', () => setTimeout(handleMakeChange, 0));
+
+            const mechanicSelect = document.getElementById('mechanic');
+            mechanicSelect.addEventListener('change', async () => {
+                clearSelectedSlot();
+                await loadTimeSlots();
+            });
         }
 
         function handleMakeChange() {
@@ -663,19 +671,28 @@
         
         async function loadDashboardData() {
             const dateStr = formatDate(currentDate);
+            const selectedMechanic = document.getElementById('mechanic').value;
+            const slotQuery = selectedMechanic
+                ? `${API_BASE_URL}/timeslots?date=${dateStr}&mechanic=${encodeURIComponent(selectedMechanic)}`
+                : `${API_BASE_URL}/timeslots?date=${dateStr}`;
 
             try {
-                const response = await fetch(`${API_BASE_URL}/dashboard?date=${dateStr}`);
-                const data = await response.json();
+                const [dashboardResponse, slotsResponse] = await Promise.all([
+                    fetch(`${API_BASE_URL}/dashboard?date=${dateStr}`),
+                    fetch(slotQuery)
+                ]);
 
-                if (!data.success) {
+                const dashboardData = await dashboardResponse.json();
+                const slotsData = await slotsResponse.json();
+
+                if (!dashboardData.success || !slotsData.success) {
                     throw new Error('Failed to load dashboard data');
                 }
 
-                renderTimeSlots(data.slots);
-                displayBookings(data.bookings);
-                displayMechanicStats(data.stats);
-                displayMechanicCards(data.bookings);
+                renderTimeSlots(slotsData.slots);
+                displayBookings(dashboardData.bookings);
+                displayMechanicStats(dashboardData.stats);
+                displayMechanicCards(dashboardData.bookings);
             } catch (error) {
                 console.error('Error loading dashboard data:', error);
                 document.getElementById('timeSlots').innerHTML = '<p class="error-message">Error connecting to server</p>';
@@ -695,9 +712,15 @@
             slots.forEach(slot => {
                 const slotDiv = document.createElement('div');
                 slotDiv.className = `time-slot ${!slot.available ? 'booked' : ''}`;
+                slotDiv.setAttribute('aria-disabled', slot.available ? 'false' : 'true');
+
+                const slotStatus = slot.available
+                    ? `Available (${slot.remainingCapacity} left)`
+                    : 'Fully booked';
+
                 slotDiv.innerHTML = `
                     <div class="time">${slot.time}</div>
-                    <div class="status">${slot.available ? 'Available' : 'Booked'}</div>
+                    <div class="status">${slotStatus}</div>
                 `;
 
                 if (slot.available) {
@@ -713,14 +736,20 @@
         }
 
 
-        function selectTimeSlot(time, element) {
-            if (element.classList.contains('booked')) return;
-            
-            // Remove previous selection
+        function clearSelectedSlot() {
             if (selectedSlotElement) {
                 selectedSlotElement.classList.remove('selected');
+                selectedSlotElement = null;
             }
-            
+            selectedSlot = null;
+            document.getElementById('selectedSlot').value = '';
+        }
+
+        function selectTimeSlot(time, element) {
+            if (element.classList.contains('booked')) return;
+
+            clearSelectedSlot();
+
             // Select new slot
             element.classList.add('selected');
             selectedSlotElement = element;
@@ -958,9 +987,7 @@
             }
             
             updateDateDisplay();
-            selectedSlot = null;
-            selectedSlotElement = null;
-            document.getElementById('selectedSlot').value = '';
+            clearSelectedSlot();
             
             await loadDashboardData();
         }

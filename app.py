@@ -15,6 +15,8 @@ ALL_TIME_SLOTS = [
     '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'
 ]
 
+NON_BLOCKING_BOOKING_STATUSES = ('cancelled', 'completed')
+
 def get_db_connection():
     """Create a database connection"""
     conn = sqlite3.connect(DATABASE)
@@ -99,14 +101,15 @@ def build_slot_availability(cursor, date, mechanic_id=None):
     if mechanic_id:
         cursor.execute('''
             SELECT time_slot FROM bookings
-            WHERE booking_date = ? AND mechanic = ? AND status != 'cancelled'
-        ''', (date, mechanic_id))
+            WHERE booking_date = ? AND mechanic = ? AND status NOT IN (?, ?)
+        ''', (date, mechanic_id, *NON_BLOCKING_BOOKING_STATUSES))
         booked_slots = {row['time_slot'] for row in cursor.fetchall()}
 
         return [
             {
                 'time': slot,
                 'available': slot not in booked_slots,
+                'remainingCapacity': 1 if slot not in booked_slots else 0,
                 'available_mechanics': 1 if slot not in booked_slots else 0
             }
             for slot in ALL_TIME_SLOTS
@@ -117,9 +120,9 @@ def build_slot_availability(cursor, date, mechanic_id=None):
 
     cursor.execute('''
         SELECT time_slot, COUNT(*) as booking_count FROM bookings
-        WHERE booking_date = ? AND status != 'cancelled'
+        WHERE booking_date = ? AND status NOT IN (?, ?)
         GROUP BY time_slot
-    ''', (date,))
+    ''', (date, *NON_BLOCKING_BOOKING_STATUSES))
     booking_counts = {row['time_slot']: row['booking_count'] for row in cursor.fetchall()}
 
     slots = []
@@ -129,6 +132,7 @@ def build_slot_availability(cursor, date, mechanic_id=None):
         slots.append({
             'time': slot,
             'available': free_count > 0,
+            'remainingCapacity': free_count,
             'available_mechanics': free_count
         })
 
@@ -199,8 +203,13 @@ def create_booking():
     # Check if time slot is already booked for the selected mechanic
     cursor.execute('''
         SELECT id FROM bookings 
-        WHERE time_slot = ? AND booking_date = ? AND mechanic = ? AND status != 'cancelled'
-    ''', (data['time_slot'], data['booking_date'], data['mechanic']))
+        WHERE time_slot = ? AND booking_date = ? AND mechanic = ? AND status NOT IN (?, ?)
+    ''', (
+        data['time_slot'],
+        data['booking_date'],
+        data['mechanic'],
+        *NON_BLOCKING_BOOKING_STATUSES
+    ))
     
     if cursor.fetchone():
         conn.close()
