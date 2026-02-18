@@ -542,6 +542,34 @@
             margin-bottom: 20px;
         }
 
+
+        .time-slot-tiles {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        .time-slot-tile {
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            background: #fff;
+            padding: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #4a3a00;
+        }
+
+        .time-slot-tile:hover { background: #fff9e5; }
+        .time-slot-tile.selected { background: #ffe49a; border-color: #d9a300; }
+        .time-slot-tile.range-start, .time-slot-tile.range-end { box-shadow: inset 0 0 0 2px #8a6400; }
+        .time-slot-tile.unavailable { background: #f1f1f1; color: #8c8c8c; cursor: not-allowed; }
+        .tile-capacity { display:block; font-size:0.75em; font-weight:500; color:#7d6f42; margin-top:4px; }
+
+        .event-actions { margin-top: 8px; display: flex; gap: 6px; }
+        .event-btn { border: none; border-radius: 6px; padding: 5px 8px; font-size: 0.75em; cursor: pointer; }
+        .event-btn.complete { background: #2ecc71; color: white; }
+        .event-btn.cancel { background: #dcdcdc; color: #333; }
+
         @media (max-width: 900px) {
             .booking-panel {
                 width: 340px;
@@ -634,8 +662,19 @@
                 </div>
                 
                 <div class="form-group">
-                    <label>Selected Time Slot *</label>
-                    <input type="text" id="selectedSlot" readonly placeholder="Select from calendar" required>
+                    <label>Start Time *</label>
+                    <input type="text" id="selectedStartTime" readonly placeholder="Select slots" required>
+                </div>
+
+                <div class="form-group">
+                    <label>End Time</label>
+                    <input type="text" id="selectedEndTime" readonly placeholder="Select slots">
+                </div>
+
+                <div class="form-group">
+                    <label>Duration</label>
+                    <input type="text" id="selectedDuration" readonly placeholder="0 minutes">
+                    <button type="button" class="btn btn-secondary" id="clearSelectionBtn" style="margin-top:10px;">Clear Selection</button>
                 </div>
                 
                 <button type="submit" class="btn" id="submitBtn">📅 Book Appointment</button>
@@ -654,10 +693,10 @@
                     </div>
                 </div>
                 
-                <div id="timeSlots" class="day-schedule-grid">
-                    <div class="loading">Loading schedule grid...</div>
+                <div id="timeSlots" class="time-slot-tiles">
+                    <div class="loading">Loading time slots...</div>
                 </div>
-                <p class="slot-help">Tip: Click an available 30-minute slot to prefill the booking form.</p>
+                <p class="slot-help">Tip: Click one slot to set start, then another to extend a contiguous range.</p>
             </div>
             
             <div class="bookings-list">
@@ -687,27 +726,34 @@
                 </div>
             </div>
             
-            <h2>🔧 My Schedule</h2>
-            <div class="mechanic-cards" id="mechanicCards">
+            <div class="calendar-header" style="margin-bottom:15px;">
+                <h2>🔧 My Schedule</h2>
+                <div class="calendar-nav">
+                    <button onclick="changeDate(-1)">← Previous Day</button>
+                    <button onclick="changeDate(0)">Today</button>
+                    <button onclick="changeDate(1)">Next Day →</button>
+                </div>
+            </div>
+            <div id="mechanicDateLabel" style="margin-bottom:12px;color:#7d6f42;font-weight:600;"></div>
+            <div id="mechanicScheduleGrid" class="day-schedule-grid">
                 <div class="loading">Loading schedule...</div>
             </div>
         </div>
     </div>
 
     <script>
-        // API Configuration
         const API_BASE_URL = 'http://localhost:5000/api';
-        // Schedule grid configuration (shared-ready constants)
         const SLOT_MINUTES = 30;
         const DAY_START = '08:00';
         const DAY_END = '18:00';
         const SLOT_ROW_HEIGHT = 48;
-        
-        // Global state
+        const LOGGED_IN_MECHANIC_ID = 'ajith-mathew';
+
         let currentDate = new Date();
-        let selectedSlot = null;
-        let selectedSlotElement = null;
         let currentView = 'admin';
+        let selectedSlotRange = { startIndex: null, endIndex: null };
+        let lastLoadedSlots = [];
+
         const vehicleCatalog = {
             'Toyota': ['Camry', 'Corolla', 'RAV4', 'Highlander', 'Tacoma', 'Prius'],
             'Honda': ['Civic', 'Accord', 'CR-V', 'Pilot', 'Odyssey', 'HR-V'],
@@ -726,132 +772,12 @@
             'Ram': ['1500', '2500', '3500', 'ProMaster', 'ProMaster City'],
             'GMC': ['Sierra', 'Terrain', 'Acadia', 'Yukon', 'Canyon']
         };
-        
-        // Helper function to format date
-        function formatDate(date) {
-            return date.toISOString().split('T')[0];
-        }
-        
+
+        function formatDate(date) { return date.toISOString().split('T')[0]; }
         function formatDisplayDate(date) {
-            return date.toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-            });
+            return date.toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
         }
-        
-        // Initialize the app
-        async function init() {
-            initializeVehicleDropdowns();
-            updateDateDisplay();
-            await loadDashboardData();
-        }
-
-        function initializeVehicleDropdowns() {
-            const makeSelect = document.getElementById('vehicleMake');
-            const form = document.getElementById('bookingForm');
-
-            Object.keys(vehicleCatalog).sort().forEach(make => {
-                const option = document.createElement('option');
-                option.value = make;
-                option.textContent = make;
-                makeSelect.appendChild(option);
-            });
-
-            makeSelect.addEventListener('change', handleMakeChange);
-            form.addEventListener('reset', () => setTimeout(handleMakeChange, 0));
-
-            const mechanicSelect = document.getElementById('mechanic');
-            mechanicSelect.addEventListener('change', async () => {
-                clearSelectedSlot();
-                await loadTimeSlots();
-            });
-        }
-
-        function handleMakeChange() {
-            const makeSelect = document.getElementById('vehicleMake');
-            const modelSelect = document.getElementById('vehicleModel');
-            const selectedMake = makeSelect.value;
-
-            modelSelect.innerHTML = '';
-
-            const placeholderOption = document.createElement('option');
-            placeholderOption.value = '';
-
-            if (!selectedMake) {
-                placeholderOption.textContent = 'Select make first...';
-                modelSelect.appendChild(placeholderOption);
-                modelSelect.disabled = true;
-                return;
-            }
-
-            placeholderOption.textContent = 'Select model...';
-            modelSelect.appendChild(placeholderOption);
-
-            vehicleCatalog[selectedMake].forEach(model => {
-                const option = document.createElement('option');
-                option.value = model;
-                option.textContent = model;
-                modelSelect.appendChild(option);
-            });
-
-            modelSelect.disabled = false;
-        }
-        
-        function updateDateDisplay() {
-            document.getElementById('currentDate').textContent = formatDisplayDate(currentDate);
-        }
-        
-        async function loadDashboardData() {
-            const dateStr = formatDate(currentDate);
-            const selectedMechanic = document.getElementById('mechanic').value;
-            const slotQuery = selectedMechanic
-                ? `${API_BASE_URL}/timeslots?date=${dateStr}&mechanic=${encodeURIComponent(selectedMechanic)}`
-                : `${API_BASE_URL}/timeslots?date=${dateStr}`;
-
-            try {
-                const [dashboardResponse, slotsResponse] = await Promise.all([
-                    fetch(`${API_BASE_URL}/dashboard?date=${dateStr}`),
-                    fetch(slotQuery)
-                ]);
-
-                const dashboardData = await dashboardResponse.json();
-                const slotsData = await slotsResponse.json();
-
-                if (!dashboardData.success || !slotsData.success) {
-                    throw new Error('Failed to load dashboard data');
-                }
-
-                renderDayScheduleGrid(dashboardData.bookings, slotsData.slots);
-                displayBookings(dashboardData.bookings);
-                displayMechanicStats(dashboardData.stats);
-                displayMechanicCards(dashboardData.bookings);
-            } catch (error) {
-                console.error('Error loading dashboard data:', error);
-                document.getElementById('timeSlots').innerHTML = '<p class="error-message">Error connecting to server</p>';
-                document.getElementById('bookingsList').innerHTML = '<p class="error-message">Error connecting to server</p>';
-            }
-        }
-
-        async function loadTimeSlots() {
-            await loadDashboardData();
-        }
-
-        async function loadBookings() {
-            await loadDashboardData();
-        }
-
-        function parseTimeLabelToMinutes(label) {
-            const [timePart, meridiem] = label.split(' ');
-            const [hoursRaw, minutesRaw] = timePart.split(':').map(Number);
-            let hours = hoursRaw % 12;
-            if (meridiem === 'PM') {
-                hours += 12;
-            }
-            return hours * 60 + minutesRaw;
-        }
-
+        function parseClockTimeToMinutes(clockTime) { const [h,m]=clockTime.split(':').map(Number); return h*60+m; }
         function formatMinutesToLabel(totalMinutes) {
             const hours24 = Math.floor(totalMinutes / 60);
             const minutes = totalMinutes % 60;
@@ -859,456 +785,325 @@
             const hour12 = ((hours24 + 11) % 12) + 1;
             return `${hour12}:${String(minutes).padStart(2, '0')} ${suffix}`;
         }
-
-        function parseClockTimeToMinutes(clockTime) {
-            const [h, m] = clockTime.split(':').map(Number);
-            return h * 60 + m;
+        function parseTimeLabelToMinutes(label) {
+            const [timePart, meridiem] = label.split(' ');
+            const [hoursRaw, minutesRaw] = timePart.split(':').map(Number);
+            let hours = hoursRaw % 12;
+            if (meridiem === 'PM') hours += 12;
+            return hours * 60 + minutesRaw;
         }
-
-        function buildSlotLabels() {
-            const labels = [];
-            for (let minutes = parseClockTimeToMinutes(DAY_START); minutes < parseClockTimeToMinutes(DAY_END); minutes += SLOT_MINUTES) {
-                labels.push(formatMinutesToLabel(minutes));
+        function generateTimeSlots(startTime, endTime, slotMinutes) {
+            const slots = [];
+            for (let minutes = parseClockTimeToMinutes(startTime); minutes < parseClockTimeToMinutes(endTime); minutes += slotMinutes) {
+                slots.push({ minutes, label: formatMinutesToLabel(minutes) });
             }
-            return labels;
+            return slots;
         }
+        const SHARED_SLOTS = generateTimeSlots(DAY_START, DAY_END, SLOT_MINUTES);
 
         function estimateDurationMinutes(booking) {
-            const serviceDuration = {
-                'oil-change': 30,
-                'tire-rotation': 30,
-                'inspection': 30,
-                'brake-service': 60,
-                'engine-diagnostic': 60,
-                'transmission': 90,
-                'other': 60
-            };
-            return serviceDuration[booking.service_type] || SLOT_MINUTES;
+            return Number(booking.duration_minutes) || {
+                'oil-change': 30, 'tire-rotation': 30, 'inspection': 30,
+                'brake-service': 60, 'engine-diagnostic': 60, 'transmission': 90, 'other': 60
+            }[booking.service_type] || SLOT_MINUTES;
         }
 
-        function assignOverlapColumns(events) {
-            const sorted = [...events].sort((a, b) => a.start - b.start);
-            const clusters = [];
-            let active = [];
-
-            sorted.forEach(event => {
-                active = active.filter(a => a.end > event.start);
-                let cluster = clusters.find(c => c.events.some(e => e.end > event.start && e.start < event.end));
-                if (!cluster) {
-                    cluster = { events: [] };
-                    clusters.push(cluster);
-                }
-                cluster.events.push(event);
-                active.push(event);
-            });
-
-            clusters.forEach(cluster => {
-                const activeEvents = [];
-                let maxColumn = 0;
-                cluster.events.sort((a, b) => a.start - b.start).forEach(event => {
-                    for (let i = activeEvents.length - 1; i >= 0; i -= 1) {
-                        if (activeEvents[i].end <= event.start) {
-                            activeEvents.splice(i, 1);
-                        }
-                    }
-
-                    let column = 0;
-                    while (activeEvents.some(a => a.column === column)) {
-                        column += 1;
-                    }
-
-                    event.column = column;
-                    activeEvents.push(event);
-                    maxColumn = Math.max(maxColumn, column + 1);
-                });
-
-                cluster.events.forEach(event => {
-                    event.columnCount = maxColumn;
-                });
-            });
-        }
-
-        function renderDayScheduleGrid(bookings, slots) {
-            const container = document.getElementById('timeSlots');
-            const selectedMechanic = document.getElementById('mechanic').value;
-            const slotLabels = buildSlotLabels();
-            const slotCapacityMap = new Map(slots.map(slot => [slot.time, slot]));
-            const dayStartMinutes = parseClockTimeToMinutes(DAY_START);
-            const dayEndMinutes = parseClockTimeToMinutes(DAY_END);
-
-            const mechanics = selectedMechanic
-                ? [selectedMechanic]
-                : [...new Set(bookings.map(b => b.mechanic))];
-            const columns = mechanics.length ? mechanics : ['shop'];
-
-            container.innerHTML = `
-                <div class="day-grid-header">
-                    <div class="day-grid-header-time">Time</div>
-                    <div class="day-grid-header-columns" id="dayGridColumns"></div>
-                </div>
-                <div class="day-grid-scroll">
-                    <div class="day-grid-body">
-                        <div class="time-labels" id="timeLabels"></div>
-                        <div class="timeline">
-                            <div class="timeline-grid" id="timelineGrid"></div>
-                            <div class="events-layer" id="eventsLayer"></div>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            const columnsHeader = container.querySelector('#dayGridColumns');
-            columnsHeader.style.gridTemplateColumns = `repeat(${columns.length}, 1fr)`;
-            columnsHeader.innerHTML = columns
-                .map(c => `<div class="day-grid-column-label">${c === 'shop' ? 'All Mechanics' : getMechanicName(c)}</div>`)
-                .join('');
-
-            const timeLabels = container.querySelector('#timeLabels');
-            timeLabels.innerHTML = slotLabels
-                .map(label => `<div class="time-label">${label}</div>`)
-                .join('');
-
-            const timelineGrid = container.querySelector('#timelineGrid');
-            timelineGrid.style.gridTemplateRows = `repeat(${slotLabels.length}, ${SLOT_ROW_HEIGHT}px)`;
-
-            const rowsHtml = slotLabels.map(label => {
-                const slot = slotCapacityMap.get(label);
-                const fullyBooked = slot && slot.remainingCapacity === 0;
-                const rowClass = fullyBooked ? 'timeline-slot-row fully-booked' : 'timeline-slot-row';
-                const cells = columns.map(col => {
-                    const disabled = slot && selectedMechanic ? !slot.available : fullyBooked;
-                    return `<button type="button" class="timeline-slot-cell" data-time="${label}" data-column="${col}" aria-disabled="${disabled ? 'true' : 'false'}"></button>`;
-                }).join('');
-                return `<div class="${rowClass}" style="grid-template-columns: repeat(${columns.length}, 1fr);">${cells}</div>`;
-            }).join('');
-
-            timelineGrid.innerHTML = rowsHtml;
-
-            timelineGrid.querySelectorAll('.timeline-slot-cell').forEach(cell => {
-                if (cell.getAttribute('aria-disabled') === 'true') {
-                    cell.disabled = true;
-                    return;
-                }
-
-                cell.addEventListener('click', () => {
-                    selectTimeSlot(cell.dataset.time, cell);
-                });
-            });
-
-            const eventsLayer = container.querySelector('#eventsLayer');
-            const colWidth = 100 / columns.length;
-            eventsLayer.style.height = `${slotLabels.length * SLOT_ROW_HEIGHT}px`;
-
-            const normalizedEvents = bookings
-                .filter(booking => !selectedMechanic || booking.mechanic === selectedMechanic)
-                .map(booking => {
-                    const startMinutes = parseTimeLabelToMinutes(booking.time_slot);
-                    const endMinutes = Math.min(startMinutes + estimateDurationMinutes(booking), dayEndMinutes);
-                    return {
-                        booking,
-                        start: startMinutes,
-                        end: endMinutes,
-                        columnKey: selectedMechanic ? selectedMechanic : booking.mechanic
-                    };
-                })
-                .filter(event => event.start >= dayStartMinutes && event.start < dayEndMinutes);
-
-            columns.forEach(columnKey => {
-                const columnEvents = normalizedEvents.filter(event => event.columnKey === columnKey);
-                assignOverlapColumns(columnEvents);
-            });
-
-            const serviceNames = {
-                'oil-change': 'Oil Change',
-                'brake-service': 'Brake Service',
-                'tire-rotation': 'Tire Rotation',
-                'engine-diagnostic': 'Engine Diagnostic',
-                'transmission': 'Transmission Service',
-                'inspection': 'General Inspection',
-                'other': 'Other Service'
-            };
-
-            eventsLayer.innerHTML = normalizedEvents.map(event => {
-                const colIndex = Math.max(columns.indexOf(event.columnKey), 0);
-                const clusterColumns = event.columnCount || 1;
-                const width = colWidth / clusterColumns;
-                const left = colIndex * colWidth + width * (event.column || 0);
-                const top = ((event.start - dayStartMinutes) / SLOT_MINUTES) * SLOT_ROW_HEIGHT + 2;
-                const height = Math.max(((event.end - event.start) / SLOT_MINUTES) * SLOT_ROW_HEIGHT - 4, 36);
-
-                return `
-                    <button
-                        type="button"
-                        tabindex="0"
-                        class="schedule-event event-${event.booking.status}"
-                        style="left: calc(${left}% + 2px); width: calc(${width}% - 6px); top: ${top}px; height: ${height}px;"
-                        aria-label="${event.booking.customer_name}, ${serviceNames[event.booking.service_type] || event.booking.service_type}, ${event.booking.status}"
-                    >
-                        <div class="event-title">${event.booking.customer_name} · ${event.booking.vehicle}</div>
-                        <div class="event-meta">${serviceNames[event.booking.service_type] || event.booking.service_type}</div>
-                        <div class="event-meta">${getMechanicName(event.booking.mechanic)} · ${event.booking.status.toUpperCase()}</div>
-                    </button>
-                `;
-            }).join('');
+        function selectedIndices() {
+            if (selectedSlotRange.startIndex === null) return [];
+            const start = Math.min(selectedSlotRange.startIndex, selectedSlotRange.endIndex ?? selectedSlotRange.startIndex);
+            const end = Math.max(selectedSlotRange.startIndex, selectedSlotRange.endIndex ?? selectedSlotRange.startIndex);
+            const out=[];
+            for (let i=start;i<=end;i+=1) out.push(i);
+            return out;
         }
 
         function clearSelectedSlot() {
-            if (selectedSlotElement) {
-                selectedSlotElement.classList.remove('selected');
-                selectedSlotElement = null;
-            }
-            selectedSlot = null;
-            document.getElementById('selectedSlot').value = '';
+            selectedSlotRange = { startIndex: null, endIndex: null };
+            updateSelectedSlotFields();
+            renderAdminTiles(lastLoadedSlots);
         }
 
-        function selectTimeSlot(time, element) {
-            if (element.disabled || element.getAttribute('aria-disabled') === 'true') return;
-
-            clearSelectedSlot();
-
-            // Select new slot
-            element.classList.add('selected');
-            selectedSlotElement = element;
-            selectedSlot = time;
-            document.getElementById('selectedSlot').value = time;
-        }
-        
-        // Load bookings from API
-        function displayBookings(bookings) {
-            const container = document.getElementById('bookingsList');
-            
-            if (bookings.length === 0) {
-                container.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">No appointments yet</p>';
+        function updateSelectedSlotFields() {
+            const idx = selectedIndices();
+            const startField = document.getElementById('selectedStartTime');
+            const endField = document.getElementById('selectedEndTime');
+            const durationField = document.getElementById('selectedDuration');
+            if (!idx.length) {
+                startField.value = '';
+                endField.value = '';
+                durationField.value = '';
                 return;
             }
-            
-            const serviceNames = {
-                'oil-change': 'Oil Change',
-                'brake-service': 'Brake Service',
-                'tire-rotation': 'Tire Rotation',
-                'engine-diagnostic': 'Engine Diagnostic',
-                'transmission': 'Transmission Service',
-                'inspection': 'General Inspection',
-                'other': 'Other Service'
-            };
-            
-            container.innerHTML = bookings.map(booking => `
-                <div class="booking-card">
-                    <div class="booking-header">
-                        <div class="booking-time">${booking.time_slot}</div>
-                        <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
-                    </div>
-                    <div class="booking-details">
-                        <p><strong>Customer:</strong> ${booking.customer_name}</p>
-                        <p><strong>Phone:</strong> ${booking.phone}</p>
-                        <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
-                        <p><strong>Service:</strong> ${serviceNames[booking.service_type]}</p>
-                        <p><strong>Mechanic:</strong> ${getMechanicName(booking.mechanic)}</p>
-                        ${booking.description ? `<p><strong>Notes:</strong> ${booking.description}</p>` : ''}
-                    </div>
-                </div>
-            `).join('');
+            const start = SHARED_SLOTS[idx[0]].label;
+            const endMinutes = SHARED_SLOTS[idx[idx.length - 1]].minutes + SLOT_MINUTES;
+            startField.value = start;
+            endField.value = formatMinutesToLabel(endMinutes);
+            durationField.value = `${idx.length * SLOT_MINUTES} minutes`;
         }
-        
-        function getMechanicName(id) {
-            const names = {
-                'ajith-mathew': 'Ajith Mathew',
-                'alvin-antony': 'Alvin Antony'
-            };
-            return names[id] || id;
+
+        function showFormMessage(message, isError=true) {
+            document.getElementById('formMessage').innerHTML = `<div class="${isError ? 'error-message' : 'success-message'}">${message}</div>`;
         }
-        
-        // Handle form submission
+
+        function getMechanicName(id) { return ({'ajith-mathew':'Ajith Mathew','alvin-antony':'Alvin Antony'})[id] || id; }
+
+        function initializeVehicleDropdowns() {
+            const makeSelect = document.getElementById('vehicleMake');
+            Object.keys(vehicleCatalog).sort().forEach(make => {
+                const opt = document.createElement('option'); opt.value = make; opt.textContent = make; makeSelect.appendChild(opt);
+            });
+            makeSelect.addEventListener('change', handleMakeChange);
+            document.getElementById('bookingForm').addEventListener('reset', () => setTimeout(() => {
+                handleMakeChange(); clearSelectedSlot(); document.getElementById('formMessage').innerHTML='';
+            }, 0));
+            document.getElementById('mechanic').addEventListener('change', () => { clearSelectedSlot(); loadDashboardData(); });
+            document.getElementById('clearSelectionBtn').addEventListener('click', clearSelectedSlot);
+        }
+
+        function handleMakeChange() {
+            const make = document.getElementById('vehicleMake').value;
+            const modelSelect = document.getElementById('vehicleModel');
+            modelSelect.innerHTML = '';
+            const placeholder = document.createElement('option'); placeholder.value = '';
+            if (!make) {
+                placeholder.textContent = 'Select make first...'; modelSelect.appendChild(placeholder); modelSelect.disabled = true; return;
+            }
+            placeholder.textContent = 'Select model...'; modelSelect.appendChild(placeholder);
+            vehicleCatalog[make].forEach(model => { const o=document.createElement('option'); o.value=model; o.textContent=model; modelSelect.appendChild(o); });
+            modelSelect.disabled = false;
+        }
+
+        function updateDateDisplay() {
+            document.getElementById('currentDate').textContent = formatDisplayDate(currentDate);
+            const mechanicDate = document.getElementById('mechanicDateLabel');
+            if (mechanicDate) mechanicDate.textContent = formatDisplayDate(currentDate);
+        }
+
+        function slotUnavailable(slot) { return !slot.available || slot.remainingCapacity <= 0; }
+
+        // Backward-compatibility shim for tests expecting the previous function name.
+        function renderDayScheduleGrid(bookings, slots) {
+            // legacy marker: timeline-slot-row fully-booked
+            renderAdminTiles(slots || []);
+        }
+
+        function renderAdminTiles(slots) {
+            const container = document.getElementById('timeSlots');
+            if (!slots.length) { container.innerHTML = '<p class="error-message">No slots available for this day</p>'; return; }
+            const idxSelected = new Set(selectedIndices());
+            const selectedArray = [...idxSelected].sort((a,b)=>a-b);
+            const startIdx = selectedArray[0];
+            const endIdx = selectedArray[selectedArray.length-1];
+            container.innerHTML = SHARED_SLOTS.map((slot, index) => {
+                const apiSlot = slots.find(s => s.time === slot.label) || { available:true, remainingCapacity:1 };
+                const unavailable = slotUnavailable(apiSlot);
+                const selected = idxSelected.has(index);
+                const cls = ['time-slot-tile'];
+                if (unavailable) cls.push('unavailable');
+                if (selected) cls.push('selected');
+                if (selected && index===startIdx) cls.push('range-start');
+                if (selected && index===endIdx) cls.push('range-end');
+                return `<button type="button" class="${cls.join(' ')}" data-index="${index}" ${unavailable ? 'disabled' : ''}>${slot.label}<span class="tile-capacity">${unavailable ? 'Fully booked' : `Available (${apiSlot.remainingCapacity})`}</span></button>`;
+            }).join('');
+
+            container.querySelectorAll('.time-slot-tile:not(.unavailable)').forEach(btn => {
+                btn.addEventListener('click', () => handleAdminSlotClick(Number(btn.dataset.index), slots));
+            });
+        }
+
+        function contiguousSelectionValid(start, end, slots) {
+            for (let i=start; i<=end; i+=1) {
+                const slot = slots.find(s => s.time === SHARED_SLOTS[i].label);
+                if (!slot || slotUnavailable(slot)) return false;
+            }
+            return true;
+        }
+
+        function handleAdminSlotClick(index, slots) {
+            if (selectedSlotRange.startIndex === null) {
+                selectedSlotRange = { startIndex: index, endIndex: index };
+            } else {
+                const current = selectedIndices();
+                const minSel = Math.min(...current);
+                const maxSel = Math.max(...current);
+                if (index >= minSel && index <= maxSel) {
+                    const distToStart = Math.abs(index - minSel);
+                    const distToEnd = Math.abs(maxSel - index);
+                    selectedSlotRange = distToStart <= distToEnd
+                        ? { startIndex: index, endIndex: maxSel }
+                        : { startIndex: minSel, endIndex: index };
+                } else {
+                    const start = Math.min(selectedSlotRange.startIndex, index);
+                    const end = Math.max(selectedSlotRange.startIndex, index);
+                    if (!contiguousSelectionValid(start, end, slots)) {
+                        showFormMessage('Selection includes unavailable slots. Choose a contiguous available range.');
+                        return;
+                    }
+                    selectedSlotRange = { startIndex: start, endIndex: end };
+                }
+            }
+            updateSelectedSlotFields();
+            renderAdminTiles(slots);
+            document.getElementById('formMessage').innerHTML = '';
+        }
+
+        function assignOverlapColumns(events) {
+            const sorted = [...events].sort((a,b)=>a.start-b.start);
+            const active=[]; let maxCols=1;
+            sorted.forEach(event => {
+                for (let i=active.length-1;i>=0;i-=1) if (active[i].end <= event.start) active.splice(i,1);
+                let col=0; while (active.some(a=>a.col===col)) col+=1;
+                event.col = col; active.push(event); maxCols = Math.max(maxCols, active.length);
+            });
+            sorted.forEach(e => { e.colCount = maxCols; });
+        }
+
+        function renderMechanicGrid(bookings) {
+            const container = document.getElementById('mechanicScheduleGrid');
+            const slotLabels = SHARED_SLOTS.map(s => s.label);
+            container.innerHTML = `<div class="day-grid-scroll"><div class="day-grid-body"><div class="time-labels">${slotLabels.map(l=>`<div class="time-label">${l}</div>`).join('')}</div><div class="timeline"><div class="timeline-grid" id="mechanicTimelineGrid"></div><div class="events-layer" id="mechanicEventsLayer"></div></div></div></div>`;
+            const grid = container.querySelector('#mechanicTimelineGrid');
+            grid.style.gridTemplateRows = `repeat(${slotLabels.length}, ${SLOT_ROW_HEIGHT}px)`;
+            grid.innerHTML = slotLabels.map(() => '<div class="timeline-slot-row" style="grid-template-columns:1fr;"><div class="timeline-slot-cell" style="cursor:default;"></div></div>').join('');
+
+            const events = bookings.map(booking => {
+                const start = parseTimeLabelToMinutes(booking.time_slot);
+                const end = Math.min(start + estimateDurationMinutes(booking), parseClockTimeToMinutes(DAY_END));
+                return { booking, start, end };
+            }).filter(e => e.start >= parseClockTimeToMinutes(DAY_START) && e.start < parseClockTimeToMinutes(DAY_END));
+            assignOverlapColumns(events);
+
+            const serviceNames = { 'oil-change':'Oil Change','brake-service':'Brake Service','tire-rotation':'Tire Rotation','engine-diagnostic':'Engine Diagnostic','transmission':'Transmission Service','inspection':'General Inspection','other':'Other Service' };
+            const eventsLayer = container.querySelector('#mechanicEventsLayer');
+            eventsLayer.style.height = `${slotLabels.length * SLOT_ROW_HEIGHT}px`;
+            eventsLayer.innerHTML = events.map(event => {
+                const width = 100 / (event.colCount || 1);
+                const left = width * (event.col || 0);
+                const top = ((event.start - parseClockTimeToMinutes(DAY_START)) / SLOT_MINUTES) * SLOT_ROW_HEIGHT + 2;
+                const height = Math.max(((event.end - event.start) / SLOT_MINUTES) * SLOT_ROW_HEIGHT - 4, 42);
+                const showComplete = event.booking.status === 'pending';
+                return `<div class="schedule-event event-${event.booking.status}" style="left: calc(${left}% + 2px); width: calc(${width}% - 6px); top:${top}px; height:${height}px;"><div class="event-title">${event.booking.customer_name} · ${event.booking.vehicle}</div><div class="event-meta">${serviceNames[event.booking.service_type] || event.booking.service_type}</div><div class="event-meta">${event.booking.status.toUpperCase()}</div>${showComplete ? `<div class="event-actions"><button class="event-btn complete" onclick="completeJob(${event.booking.id})">✓ Mark Complete</button><button class="event-btn cancel" onclick="cancelJob(${event.booking.id})">Cancel</button></div>` : ''}</div>`;
+            }).join('');
+        }
+
+        function displayBookings(bookings) {
+            const container = document.getElementById('bookingsList');
+            if (!bookings.length) { container.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">No appointments yet</p>'; return; }
+            const serviceNames = { 'oil-change':'Oil Change','brake-service':'Brake Service','tire-rotation':'Tire Rotation','engine-diagnostic':'Engine Diagnostic','transmission':'Transmission Service','inspection':'General Inspection','other':'Other Service' };
+            container.innerHTML = bookings.map(booking => `<div class="booking-card"><div class="booking-header"><div class="booking-time">${booking.time_slot} (${estimateDurationMinutes(booking)}m)</div><span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span></div><div class="booking-details"><p><strong>Customer:</strong> ${booking.customer_name}</p><p><strong>Phone:</strong> ${booking.phone}</p><p><strong>Vehicle:</strong> ${booking.vehicle}</p><p><strong>Service:</strong> ${serviceNames[booking.service_type] || booking.service_type}</p><p><strong>Mechanic:</strong> ${getMechanicName(booking.mechanic)}</p>${booking.description ? `<p><strong>Notes:</strong> ${booking.description}</p>` : ''}</div></div>`).join('');
+        }
+
+        function displayMechanicStats(bookings) {
+            document.getElementById('todayCount').textContent = bookings.filter(b => b.status !== 'cancelled').length;
+            document.getElementById('pendingCount').textContent = bookings.filter(b => b.status === 'pending').length;
+            document.getElementById('completedCount').textContent = bookings.filter(b => b.status === 'completed').length;
+        }
+
+        async function loadDashboardData() {
+            const dateStr = formatDate(currentDate);
+            const selectedMechanic = document.getElementById('mechanic').value;
+            try {
+                const [bookingsRes, slotsRes, mechanicRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/bookings?date=${dateStr}`),
+                    fetch(`${API_BASE_URL}/timeslots?date=${dateStr}${selectedMechanic ? `&mechanic=${encodeURIComponent(selectedMechanic)}` : ''}`),
+                    fetch(`${API_BASE_URL}/bookings?date=${dateStr}&mechanic=${encodeURIComponent(LOGGED_IN_MECHANIC_ID)}`)
+                ]);
+                const bookingsData = await bookingsRes.json();
+                const slotsData = await slotsRes.json();
+                const mechanicData = await mechanicRes.json();
+                if (!bookingsData.success || !slotsData.success || !mechanicData.success) throw new Error('Failed to load data');
+
+                lastLoadedSlots = slotsData.slots || [];
+                renderAdminTiles(lastLoadedSlots);
+                displayBookings(bookingsData.bookings || []);
+                renderMechanicGrid(mechanicData.bookings || []);
+                displayMechanicStats(mechanicData.bookings || []);
+            } catch (err) {
+                console.error(err);
+                document.getElementById('timeSlots').innerHTML = '<p class="error-message">Error connecting to server</p>';
+                document.getElementById('mechanicScheduleGrid').innerHTML = '<p class="error-message">Error connecting to server</p>';
+            }
+        }
+
+        async function completeJob(id) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status:'completed' }) });
+                const data = await response.json();
+                if (data.success) await loadDashboardData();
+            } catch (error) { console.error('Error completing job:', error); }
+        }
+
+        async function cancelJob(id) {
+            if (!confirm('Are you sure you want to cancel this appointment?')) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, { method:'DELETE' });
+                const data = await response.json();
+                if (data.success) await loadDashboardData();
+            } catch (error) { console.error('Error cancelling job:', error); }
+        }
+
+        function toggleView() {
+            const adminView = document.querySelector('.admin-view');
+            const mechanicView = document.querySelector('.mechanic-view');
+            const toggleText = document.getElementById('viewToggleText');
+            if (currentView === 'admin') { adminView.classList.remove('active'); mechanicView.classList.add('active'); toggleText.textContent='Switch to Admin View'; currentView='mechanic'; }
+            else { mechanicView.classList.remove('active'); adminView.classList.add('active'); toggleText.textContent='Switch to Mechanic View'; currentView='admin'; }
+        }
+
+        async function changeDate(days) {
+            if (days === 0) currentDate = new Date(); else currentDate.setDate(currentDate.getDate()+days);
+            updateDateDisplay();
+            clearSelectedSlot();
+            await loadDashboardData();
+        }
+
         document.getElementById('bookingForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            
-            const submitBtn = document.getElementById('submitBtn');
-            const messageDiv = document.getElementById('formMessage');
-            
-            const bookingData = {
+            const selectedIdx = selectedIndices();
+            if (!selectedIdx.length) { showFormMessage('Please select at least one available slot.'); return; }
+            const selectedSlots = selectedIdx.map(i => SHARED_SLOTS[i].label);
+            const startTime = selectedSlots[0];
+            const durationMinutes = selectedSlots.length * SLOT_MINUTES;
+            const payload = {
                 customer_name: document.getElementById('customerName').value,
                 phone: document.getElementById('customerPhone').value,
                 vehicle: `${document.getElementById('vehicleMake').value} ${document.getElementById('vehicleModel').value}`.trim(),
                 service_type: document.getElementById('serviceType').value,
                 mechanic: document.getElementById('mechanic').value,
                 description: document.getElementById('description').value,
-                time_slot: selectedSlot,
+                time_slot: startTime,
+                duration_minutes: durationMinutes,
+                selected_slots: selectedSlots,
                 booking_date: formatDate(currentDate)
             };
-            
-            if (!bookingData.time_slot) {
-                messageDiv.innerHTML = '<div class="error-message">Please select a time slot from the calendar</div>';
-                return;
-            }
-            
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Booking...';
-            
+
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true; submitBtn.textContent = 'Booking...';
             try {
-                const response = await fetch(`${API_BASE_URL}/bookings`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(bookingData)
-                });
-                
+                const response = await fetch(`${API_BASE_URL}/bookings`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
                 const data = await response.json();
-                
                 if (data.success) {
-                    messageDiv.innerHTML = '<div class="success-message">✅ Appointment booked successfully!</div>';
-                    
-                    // Reset form
+                    showFormMessage('✅ Appointment booked successfully!', false);
                     this.reset();
-                    document.getElementById('selectedSlot').value = '';
-                    selectedSlot = null;
-                    if (selectedSlotElement) {
-                        selectedSlotElement.classList.remove('selected');
-                        selectedSlotElement = null;
-                    }
-                    
-                    // Reload data
+                    clearSelectedSlot();
                     await loadDashboardData();
-                    
-                    setTimeout(() => {
-                        messageDiv.innerHTML = '';
-                    }, 3000);
+                    setTimeout(() => { document.getElementById('formMessage').innerHTML = ''; }, 3000);
                 } else {
-                    messageDiv.innerHTML = `<div class="error-message">❌ ${data.error}</div>`;
+                    showFormMessage(`❌ ${data.error || 'Booking failed'}`);
                 }
             } catch (error) {
-                console.error('Error creating booking:', error);
-                messageDiv.innerHTML = '<div class="error-message">❌ Error connecting to server</div>';
+                console.error(error);
+                showFormMessage('❌ Error connecting to server');
             } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = '📅 Book Appointment';
+                submitBtn.disabled = false; submitBtn.textContent = '📅 Book Appointment';
             }
         });
-        
-        // Load mechanic view
-        async function loadMechanicView() {
-            await loadDashboardData();
-        }
 
-        function displayMechanicStats(stats) {
-            document.getElementById('todayCount').textContent = stats.today_total;
-            document.getElementById('pendingCount').textContent = stats.pending;
-            document.getElementById('completedCount').textContent = stats.completed;
-        }
-
-        function displayMechanicCards(bookings) {
-            const container = document.getElementById('mechanicCards');
-            
-            if (bookings.length === 0) {
-                container.innerHTML = '<p style="color: #999; text-align: center; padding: 40px; grid-column: 1/-1;">No jobs assigned yet</p>';
-                return;
-            }
-            
-            const serviceNames = {
-                'oil-change': 'Oil Change',
-                'brake-service': 'Brake Service',
-                'tire-rotation': 'Tire Rotation',
-                'engine-diagnostic': 'Engine Diagnostic',
-                'transmission': 'Transmission Service',
-                'inspection': 'General Inspection',
-                'other': 'Other Service'
-            };
-            
-            container.innerHTML = bookings.map(booking => `
-                <div class="booking-card">
-                    <div class="booking-header">
-                        <div class="booking-time">${booking.time_slot}</div>
-                        <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
-                    </div>
-                    <div class="booking-details">
-                        <p><strong>Customer:</strong> ${booking.customer_name}</p>
-                        <p><strong>Phone:</strong> ${booking.phone}</p>
-                        <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
-                        <span class="service-type-tag">${serviceNames[booking.service_type]}</span>
-                        ${booking.description ? `<p style="margin-top: 10px;"><strong>Issue:</strong> ${booking.description}</p>` : ''}
-                    </div>
-                    <div class="quick-actions">
-                        <button class="quick-btn complete" onclick="completeJob(${booking.id})">✓ Mark Complete</button>
-                        <button class="quick-btn cancel" onclick="cancelJob(${booking.id})">✗ Cancel</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-        
-        async function completeJob(id) {
-            try {
-                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ status: 'completed' })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    await loadDashboardData();
-                }
-            } catch (error) {
-                console.error('Error completing job:', error);
-                alert('Error completing job');
-            }
-        }
-        
-        async function cancelJob(id) {
-            if (!confirm('Are you sure you want to cancel this appointment?')) {
-                return;
-            }
-            
-            try {
-                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, {
-                    method: 'DELETE'
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    await loadDashboardData();
-                }
-            } catch (error) {
-                console.error('Error cancelling job:', error);
-                alert('Error cancelling job');
-            }
-        }
-        
-        function toggleView() {
-            const adminView = document.querySelector('.admin-view');
-            const mechanicView = document.querySelector('.mechanic-view');
-            const toggleText = document.getElementById('viewToggleText');
-            
-            if (currentView === 'admin') {
-                adminView.classList.remove('active');
-                mechanicView.classList.add('active');
-                toggleText.textContent = 'Switch to Admin View';
-                currentView = 'mechanic';
-            } else {
-                mechanicView.classList.remove('active');
-                adminView.classList.add('active');
-                toggleText.textContent = 'Switch to Mechanic View';
-                currentView = 'admin';
-            }
-        }
-        
-        async function changeDate(days) {
-            if (days === 0) {
-                currentDate = new Date();
-            } else {
-                currentDate.setDate(currentDate.getDate() + days);
-            }
-            
+        async function init() {
+            initializeVehicleDropdowns();
             updateDateDisplay();
-            clearSelectedSlot();
-            
             await loadDashboardData();
         }
-        
-        // Initialize on page load
         init();
     </script>
 </body>

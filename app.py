@@ -15,20 +15,44 @@ DAY_START = '08:00'
 DAY_END = '18:00'
 
 
-def _generate_time_slots(start_time, end_time, slot_minutes):
-    """Build readable slot labels between start/end using fixed minute increments."""
+def _minutes_to_slot_label(total_minutes):
+    """Return locale-independent 12-hour slot label from total minutes."""
+    hours24 = total_minutes // 60
+    minutes = total_minutes % 60
+    suffix = 'PM' if hours24 >= 12 else 'AM'
+    hours12 = ((hours24 + 11) % 12) + 1
+    return f"{hours12}:{minutes:02d} {suffix}"
+
+
+def _slot_label_to_minutes(label):
+    """Parse a slot label like 8:30 AM into total minutes."""
+    time_part, suffix = label.split(' ')
+    hours_raw, minutes_raw = map(int, time_part.split(':'))
+    hours = hours_raw % 12
+    if suffix.upper() == 'PM':
+        hours += 12
+    return hours * 60 + minutes_raw
+
+
+def generate_time_slots(start_time, end_time, slot_minutes):
+    """Build slot metadata between start/end using fixed minute increments."""
     start_dt = datetime.strptime(start_time, '%H:%M')
     end_dt = datetime.strptime(end_time, '%H:%M')
     slots = []
 
     while start_dt < end_dt:
-        slots.append(start_dt.strftime('%I:%M %p').lstrip('0'))
+        slot_minutes_from_midnight = start_dt.hour * 60 + start_dt.minute
+        slots.append({
+            'minutes': slot_minutes_from_midnight,
+            'label': _minutes_to_slot_label(slot_minutes_from_midnight)
+        })
         start_dt += timedelta(minutes=slot_minutes)
 
     return slots
 
 
-ALL_TIME_SLOTS = _generate_time_slots(DAY_START, DAY_END, SLOT_MINUTES)
+ALL_TIME_SLOT_DETAILS = generate_time_slots(DAY_START, DAY_END, SLOT_MINUTES)
+ALL_TIME_SLOTS = [slot['label'] for slot in ALL_TIME_SLOT_DETAILS]
 
 NON_BLOCKING_BOOKING_STATUSES = ('cancelled', 'completed')
 
@@ -61,11 +85,20 @@ def init_db():
             mechanic TEXT NOT NULL,
             description TEXT,
             time_slot TEXT NOT NULL,
+            duration_minutes INTEGER DEFAULT 30,
+            selected_slots TEXT,
             booking_date TEXT NOT NULL,
             status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    cursor.execute("PRAGMA table_info(bookings)")
+    booking_columns = {row['name'] for row in cursor.fetchall()}
+    if 'duration_minutes' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN duration_minutes INTEGER DEFAULT 30")
+    if 'selected_slots' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN selected_slots TEXT")
     
     # Create mechanics table
     cursor.execute('''
@@ -130,12 +163,28 @@ def resolve_target_date(raw_date):
 
 def build_slot_availability(cursor, date, mechanic_id=None):
     """Build slot availability either for one mechanic or for total shop capacity."""
+    cursor.execute('''
+        SELECT time_slot, COALESCE(duration_minutes, ?) as duration_minutes, mechanic
+        FROM bookings
+        WHERE booking_date = ? AND status NOT IN (?, ?)
+    ''', (SLOT_MINUTES, date, *NON_BLOCKING_BOOKING_STATUSES))
+    active_bookings = [dict(row) for row in cursor.fetchall()]
+
+    def booking_slots(booking):
+        start = _slot_label_to_minutes(booking['time_slot'])
+        duration = max(int(booking.get('duration_minutes') or SLOT_MINUTES), SLOT_MINUTES)
+        labels = []
+        for minutes in range(start, start + duration, SLOT_MINUTES):
+            label = _minutes_to_slot_label(minutes)
+            if label in ALL_TIME_SLOTS:
+                labels.append(label)
+        return labels
+
     if mechanic_id:
-        cursor.execute('''
-            SELECT time_slot FROM bookings
-            WHERE booking_date = ? AND mechanic = ? AND status NOT IN (?, ?)
-        ''', (date, mechanic_id, *NON_BLOCKING_BOOKING_STATUSES))
-        booked_slots = {row['time_slot'] for row in cursor.fetchall()}
+        booked_slots = set()
+        for booking in active_bookings:
+            if booking['mechanic'] == mechanic_id:
+                booked_slots.update(booking_slots(booking))
 
         return [
             {
@@ -150,12 +199,10 @@ def build_slot_availability(cursor, date, mechanic_id=None):
     cursor.execute('SELECT COUNT(*) as count FROM mechanics')
     mechanic_count = cursor.fetchone()['count']
 
-    cursor.execute('''
-        SELECT time_slot, COUNT(*) as booking_count FROM bookings
-        WHERE booking_date = ? AND status NOT IN (?, ?)
-        GROUP BY time_slot
-    ''', (date, *NON_BLOCKING_BOOKING_STATUSES))
-    booking_counts = {row['time_slot']: row['booking_count'] for row in cursor.fetchall()}
+    booking_counts = {slot: 0 for slot in ALL_TIME_SLOTS}
+    for booking in active_bookings:
+        for slot in booking_slots(booking):
+            booking_counts[slot] = booking_counts.get(slot, 0) + 1
 
     slots = []
     for slot in ALL_TIME_SLOTS:
@@ -217,44 +264,69 @@ def get_bookings():
 def create_booking():
     """Create a new booking"""
     data = request.json
-    
+
     # Validate required fields
-    required_fields = ['customer_name', 'phone', 'vehicle', 'service_type', 
+    required_fields = ['customer_name', 'phone', 'vehicle', 'service_type',
                        'mechanic', 'time_slot', 'booking_date']
-    
+
     for field in required_fields:
         if field not in data or not data[field]:
             return jsonify({
                 'success': False,
                 'error': f'Missing required field: {field}'
             }), 400
-    
+
+    duration_minutes = int(data.get('duration_minutes') or SLOT_MINUTES)
+    if duration_minutes < SLOT_MINUTES or duration_minutes % SLOT_MINUTES != 0:
+        return jsonify({
+            'success': False,
+            'error': f'duration_minutes must be a multiple of {SLOT_MINUTES}'
+        }), 400
+
+    start_minutes = _slot_label_to_minutes(data['time_slot'])
+    requested_slots = []
+    for minutes in range(start_minutes, start_minutes + duration_minutes, SLOT_MINUTES):
+        label = _minutes_to_slot_label(minutes)
+        if label not in ALL_TIME_SLOTS:
+            return jsonify({
+                'success': False,
+                'error': 'Selected duration extends beyond working hours'
+            }), 400
+        requested_slots.append(label)
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    # Check if time slot is already booked for the selected mechanic
+
     cursor.execute('''
-        SELECT id FROM bookings 
-        WHERE time_slot = ? AND booking_date = ? AND mechanic = ? AND status NOT IN (?, ?)
-    ''', (
-        data['time_slot'],
-        data['booking_date'],
-        data['mechanic'],
-        *NON_BLOCKING_BOOKING_STATUSES
-    ))
-    
-    if cursor.fetchone():
+        SELECT time_slot, COALESCE(duration_minutes, ?) as duration_minutes FROM bookings
+        WHERE booking_date = ? AND mechanic = ? AND status NOT IN (?, ?)
+    ''', (SLOT_MINUTES, data['booking_date'], data['mechanic'], *NON_BLOCKING_BOOKING_STATUSES))
+
+    occupied_slots = set()
+    for row in cursor.fetchall():
+        row_start = _slot_label_to_minutes(row['time_slot'])
+        row_duration = max(int(row['duration_minutes'] or SLOT_MINUTES), SLOT_MINUTES)
+        for minutes in range(row_start, row_start + row_duration, SLOT_MINUTES):
+            slot_label = _minutes_to_slot_label(minutes)
+            if slot_label in ALL_TIME_SLOTS:
+                occupied_slots.add(slot_label)
+
+    conflicting = [slot for slot in requested_slots if slot in occupied_slots]
+    if conflicting:
         conn.close()
         return jsonify({
             'success': False,
-            'error': 'Time slot already booked for this mechanic'
+            'error': 'One or more selected slots are already booked for this mechanic',
+            'conflicting_slots': conflicting
         }), 409
-    
+
+    selected_slots_json = json.dumps(data.get('selected_slots', requested_slots))
+
     # Insert the booking
     cursor.execute('''
-        INSERT INTO bookings (customer_name, phone, vehicle, service_type, 
-                             mechanic, description, time_slot, booking_date, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO bookings (customer_name, phone, vehicle, service_type,
+                             mechanic, description, time_slot, duration_minutes, selected_slots, booking_date, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         data['customer_name'],
         data['phone'],
@@ -263,6 +335,8 @@ def create_booking():
         data['mechanic'],
         data.get('description', ''),
         data['time_slot'],
+        duration_minutes,
+        selected_slots_json,
         data['booking_date'],
         'pending'
     ))
