@@ -22,7 +22,7 @@ def _generate_time_slots(start_time, end_time, slot_minutes):
     slots = []
 
     while start_dt < end_dt:
-        slots.append(start_dt.strftime('%-I:%M %p'))
+        slots.append(start_dt.strftime('%I:%M %p').lstrip('0'))
         start_dt += timedelta(minutes=slot_minutes)
 
     return slots
