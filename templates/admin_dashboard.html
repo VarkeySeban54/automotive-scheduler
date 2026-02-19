@@ -161,6 +161,50 @@
             box-shadow: var(--shadow-soft);
         }
 
+
+        .customer-lookup-results {
+            margin-top: 8px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #fff;
+            max-height: 180px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .customer-lookup-item {
+            padding: 10px 12px;
+            border-bottom: 1px solid #eef2f7;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .customer-lookup-item:last-child { border-bottom: none; }
+        .customer-lookup-item:hover { background: #f8fafc; }
+
+        .service-history {
+            margin-bottom: 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--surface-muted);
+            padding: 12px;
+        }
+
+        .service-history h4 {
+            font-size: 0.95rem;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+
+        .history-item {
+            font-size: 0.84rem;
+            color: var(--text-soft);
+            padding: 8px 0;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .history-item:first-child { border-top: none; }
+
         .calendar-section {
             flex: 1;
             padding: 0;
@@ -631,6 +675,17 @@
             <div id="formMessage"></div>
             <form id="bookingForm">
                 <div class="form-group">
+                    <label>Customer Lookup</label>
+                    <input type="text" id="customerSearch" placeholder="Search by phone, name, or email">
+                    <div id="customerLookupResults" class="customer-lookup-results"></div>
+                </div>
+
+                <div id="serviceHistory" class="service-history">
+                    <h4>Recent Service History</h4>
+                    <div id="serviceHistoryList" style="font-size:0.85rem;color:#64748b;">Select a customer to view history.</div>
+                </div>
+
+                <div class="form-group">
                     <label>Customer Name *</label>
                     <input type="text" id="customerName" placeholder="John Doe" required>
                 </div>
@@ -638,6 +693,11 @@
                 <div class="form-group">
                     <label>Phone Number *</label>
                     <input type="tel" id="customerPhone" placeholder="(555) 123-4567" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="customerEmail" placeholder="customer@email.com">
                 </div>
                 
                 <div class="form-group">
@@ -765,6 +825,8 @@
         let selectedSlot = null;
         let selectedSlotElement = null;
         let currentView = 'admin';
+        let selectedCustomerId = null;
+        let mechanicDirectory = {};
         const vehicleCatalog = {
             'Toyota': ['Camry', 'Corolla', 'RAV4', 'Highlander', 'Tacoma', 'Prius'],
             'Honda': ['Civic', 'Accord', 'CR-V', 'Pilot', 'Odyssey', 'HR-V'],
@@ -801,6 +863,8 @@
         // Initialize the app
         async function init() {
             initializeVehicleDropdowns();
+            initializeCustomerLookup();
+            await loadMechanics();
             updateDateDisplay();
             await loadDashboardData();
         }
@@ -856,6 +920,93 @@
             modelSelect.disabled = false;
         }
         
+
+        function initializeCustomerLookup() {
+            const searchInput = document.getElementById('customerSearch');
+            let debounceTimer;
+
+            searchInput.addEventListener('input', () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => searchCustomers(searchInput.value.trim()), 250);
+            });
+        }
+
+        async function loadMechanics() {
+            const response = await fetch(`${API_BASE_URL}/mechanics`);
+            const data = await response.json();
+            if (!data.success) return;
+
+            const mechanicSelect = document.getElementById('mechanic');
+            mechanicSelect.innerHTML = '<option value="">Select mechanic...</option>';
+            mechanicDirectory = {};
+
+            data.mechanics.forEach(item => {
+                mechanicDirectory[item.mechanic_id] = item.name;
+                const option = document.createElement('option');
+                option.value = item.mechanic_id;
+                option.textContent = item.name;
+                mechanicSelect.appendChild(option);
+            });
+        }
+
+        async function searchCustomers(query) {
+            const results = document.getElementById('customerLookupResults');
+            if (query.length < 2) {
+                results.style.display = 'none';
+                results.innerHTML = '';
+                return;
+            }
+
+            const response = await fetch(`${API_BASE_URL}/customers/search?q=${encodeURIComponent(query)}`);
+            const data = await response.json();
+
+            if (!data.success || data.customers.length === 0) {
+                results.style.display = 'block';
+                results.innerHTML = '<div class="customer-lookup-item">No customer found</div>';
+                return;
+            }
+
+            results.style.display = 'block';
+            results.innerHTML = data.customers.map(customer => `
+                <div class="customer-lookup-item" onclick="selectCustomer(${customer.id})">
+                    <strong>${customer.full_name}</strong><br>
+                    ${customer.phone_number}${customer.email ? ` • ${customer.email}` : ''}
+                </div>
+            `).join('');
+            window.__customerLookup = data.customers;
+        }
+
+        async function selectCustomer(customerId) {
+            const customer = (window.__customerLookup || []).find(item => item.id === customerId);
+            if (!customer) return;
+
+            selectedCustomerId = customer.id;
+            document.getElementById('customerName').value = customer.full_name || '';
+            document.getElementById('customerPhone').value = customer.phone_number || '';
+            document.getElementById('customerEmail').value = customer.email || '';
+            document.getElementById('customerLookupResults').style.display = 'none';
+
+            await loadCustomerHistory(customer.id);
+        }
+
+        async function loadCustomerHistory(customerId) {
+            const response = await fetch(`${API_BASE_URL}/customers/${customerId}/history?limit=8`);
+            const data = await response.json();
+            const container = document.getElementById('serviceHistoryList');
+
+            if (!data.success || data.history.length === 0) {
+                container.innerHTML = 'No prior service history for this customer.';
+                return;
+            }
+
+            container.innerHTML = data.history.map(item => `
+                <div class="history-item">
+                    <strong>${item.booking_date}</strong> • ${item.service_type}<br>
+                    ${item.vehicle} ${item.description ? `• ${item.description}` : ''}<br>
+                    Status: ${item.status} • Mechanic: ${getMechanicName(item.mechanic)}
+                </div>
+            `).join('');
+        }
 
         function handleMechanicChange() {
             selectedSlot = null;
@@ -975,12 +1126,7 @@
         }
         
         function getMechanicName(id) {
-            const names = {
-                'mike': 'Mike Johnson',
-                'sarah': 'Sarah Williams',
-                'david': 'David Brown'
-            };
-            return names[id] || id;
+            return mechanicDirectory[id] || id;
         }
         
         // Handle form submission
@@ -993,6 +1139,8 @@
             const bookingData = {
                 customer_name: document.getElementById('customerName').value,
                 phone: document.getElementById('customerPhone').value,
+                email: document.getElementById('customerEmail').value,
+                customer_id: selectedCustomerId,
                 vehicle: `${document.getElementById('vehicleMake').value} ${document.getElementById('vehicleModel').value}`.trim(),
                 service_type: document.getElementById('serviceType').value,
                 mechanic: document.getElementById('mechanic').value,
@@ -1025,6 +1173,8 @@
                     
                     // Reset form
                     this.reset();
+                    selectedCustomerId = null;
+                    document.getElementById('serviceHistoryList').textContent = 'Select a customer to view history.';
                     document.getElementById('selectedSlot').value = '';
                     selectedSlot = null;
                     if (selectedSlotElement) {
