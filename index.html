@@ -703,7 +703,20 @@
     <script>
         // API Configuration
         const API_BASE_URL = '/api';
-        
+        const RUNNING_FROM_LOCAL_FILE = window.location.protocol === 'file:';
+
+        if (RUNNING_FROM_LOCAL_FILE) {
+            document.body.innerHTML = `
+                <div style="max-width:780px;margin:48px auto;padding:28px;border:1px solid #fecaca;background:#fff7ed;border-radius:12px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#7f1d1d;line-height:1.6;">
+                    <h2 style="margin-bottom:12px;color:#991b1b;">Backend connection unavailable in file mode</h2>
+                    <p style="margin-bottom:10px;">This dashboard uses relative API calls like <code>/api/dashboard</code>. When the HTML is opened directly from disk (<code>file://</code>), those calls cannot reach Flask.</p>
+                    <p style="margin-bottom:10px;">Start the backend with <code>python app.py</code> and open <a href="http://localhost:5000/login">http://localhost:5000/login</a> instead of opening the HTML file directly.</p>
+                    <p style="margin:0;">If you already started Python, confirm the server is running on port <strong>5000</strong>.</p>
+                </div>
+            `;
+            throw new Error('Dashboard opened via file://. Serve through Flask at /login.');
+        }
+
         // Global state
         let currentDate = new Date();
         let selectedSlot = null;

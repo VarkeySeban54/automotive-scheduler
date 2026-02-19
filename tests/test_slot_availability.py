@@ -105,11 +105,13 @@ class SlotAvailabilityTests(unittest.TestCase):
         self.assertEqual(free_eight_am['remainingCapacity'], 1)
 
     def test_admin_ui_marks_unavailable_slots_as_disabled(self):
-        html = Path('admin_scheduling_panel.html').read_text(encoding='utf-8')
+        html = Path('index.html').read_text(encoding='utf-8')
+        legacy_html = Path('admin_scheduling_panel.html').read_text(encoding='utf-8')
 
-        self.assertIn('const SLOT_MINUTES = 30;', html)
-        self.assertIn('function renderDayScheduleGrid(bookings, slots)', html)
-        self.assertIn('timeline-slot-row fully-booked', html)
+        self.assertIn("const API_BASE_URL = '/api';", html)
+        self.assertIn('function renderTimeSlots(slots)', html)
+        self.assertIn("slotDiv.className = `time-slot ${!slot.available ? 'booked' : ''}`;", html)
+        self.assertIn('legacy entry point', legacy_html)
 
     def test_back_end_uses_30_minute_slot_generation(self):
         self.assertEqual(scheduler_app.SLOT_MINUTES, 30)
