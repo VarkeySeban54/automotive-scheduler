@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Shop Admin Panel</title>
+    <style>
+        :root {
+            --bg: #0a0b0f;
+            --surface: #ffffff;
+            --surface-muted: #f8fafc;
+            --text: #1f2937;
+            --text-soft: #64748b;
+            --brand: #f5cc1f;
+            --brand-dark: #e0b705;
+            --border: #dbe4f0;
+            --danger: #dc2626;
+            --danger-soft: #fee2e2;
+            --success: #16a34a;
+            --success-soft: #dcfce7;
+            --warning: #f59e0b;
+            --warning-soft: #fef3c7;
+            --shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.06);
+            --shadow-hover: 0 18px 35px rgba(37, 99, 235, 0.14);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background:
+                radial-gradient(circle at 15% 25%, rgba(245, 204, 31, 0.08), transparent 30%),
+                radial-gradient(circle at 90% 75%, rgba(245, 204, 31, 0.06), transparent 36%),
+                #08090b;
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        }
+
+        .brand-strip {
+            background: #ffffff;
+            color: #0f172a;
+            padding: 18px 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .brand-strip h1 {
+            font-size: 2rem;
+            letter-spacing: 0.3px;
+        }
+
+        .brand-strip h1 .accent {
+            color: var(--brand-dark);
+        }
+
+        .navbar {
+            background: var(--brand);
+            color: #0f172a;
+            padding: 14px 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .ops-label {
+            font-weight: 700;
+            letter-spacing: 0.2px;
+        }
+
+        .navbar .user-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            color: #1f2937;
+            font-weight: 600;
+        }
+
+        .view-toggle {
+            background: #111827;
+            color: white;
+            border: 1px solid #111827;
+            padding: 10px 16px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: 0.25s ease;
+        }
+
+        .view-toggle:hover {
+            background: #000000;
+            transform: translateY(-1px);
+        }
+
+        .logout-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #111827;
+            color: var(--brand);
+            border: 1px solid #111827;
+            border-radius: 999px;
+            padding: 10px 16px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: 0.2s ease;
+        }
+
+        .logout-btn:hover {
+            background: #000000;
+            transform: translateY(-1px);
+        }
+
+        .main-container {
+            display: flex;
+            height: calc(100vh - 146px);
+            gap: 22px;
+            padding: 22px;
+        }
+
+        .booking-panel {
+            width: min(420px, 100%);
+            background: var(--surface);
+            padding: 24px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .calendar-section {
+            flex: 1;
+            padding: 0;
+            overflow-y: auto;
+        }
+
+        h2 {
+            color: var(--text);
+            margin-bottom: 18px;
+            font-size: 1.3rem;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 7px;
+            color: var(--text-soft);
+            font-weight: 600;
+            font-size: 0.88rem;
+            letter-spacing: 0.2px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px 13px;
+            border: 1px solid var(--border);
+            background: var(--surface-muted);
+            border-radius: 10px;
+            font-size: 0.97rem;
+            transition: 0.2s ease;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--brand);
+            background: var(--surface);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 88px;
+            font-family: inherit;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 13px;
+            background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+            color: #111827;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.96rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s ease;
+            box-shadow: 0 10px 16px rgba(37, 99, 235, 0.22);
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-hover);
+        }
+
+        .btn:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: #cbd5e1;
+            color: #334155;
+            margin-top: 10px;
+            box-shadow: none;
+        }
+
+        .btn-secondary:hover {
+            background: #b6c3d3;
+            box-shadow: none;
+        }
+
+        .calendar {
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: var(--shadow-soft);
+            border: 1px solid var(--border);
+        }
+        
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .calendar-header h3 {
+            color: var(--text);
+            font-size: 1.25rem;
+        }
+        
+        .calendar-nav {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .calendar-nav button {
+            padding: 10px 14px;
+            background: var(--surface-muted);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: 0.2s ease;
+        }
+        
+        .calendar-nav button:hover {
+            background: #e8eef7;
+        }
+        
+        .time-slots {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 12px;
+            margin-top: 20px;
+        }
+        
+        .time-slot {
+            padding: 15px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s ease;
+            background: var(--surface);
+        }
+        
+        .time-slot:hover:not(.booked) {
+            border-color: var(--brand);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.14);
+        }
+        
+        .time-slot.selected {
+            background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+            color: #111827;
+            border-color: var(--brand-dark);
+        }
+        
+        .time-slot.booked {
+            background: var(--danger-soft);
+            color: #991b1b;
+            border-color: #fecaca;
+            opacity: 0.85;
+            box-shadow: none;
+        }
+
+        .time-slot.booked .status {
+            color: white;
+            color: #b91c1c;
+            font-weight: 600;
+        }
+        
+        .time-slot .time {
+            font-weight: 600;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+        
+        .time-slot .status {
+            font-size: 0.82rem;
+            opacity: 0.95;
+        }
+        
+        .bookings-list {
+            margin-top: 22px;
+        }
+        
+        .booking-card {
+            background: white;
+            padding: 18px;
+            border-radius: 14px;
+            margin-bottom: 15px;
+            border-left: 4px solid var(--brand);
+            box-shadow: var(--shadow-soft);
+            border: 1px solid var(--border);
+        }
+        
+        .booking-card.urgent {
+            border-left-color: var(--danger);
+        }
+        
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+        
+        .booking-time {
+            font-weight: 600;
+            color: var(--text);
+            font-size: 1.1em;
+        }
+        
+        .booking-badge {
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .badge-pending {
+            background: var(--warning-soft);
+            color: #92400e;
+        }
+        
+        .badge-confirmed {
+            background: var(--success-soft);
+            color: #166534;
+        }
+        
+        .badge-completed {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        
+        .booking-details {
+            color: #475569;
+            line-height: 1.6;
+        }
+        
+        .booking-details p {
+            margin: 5px 0;
+        }
+        
+        .booking-details strong {
+            color: var(--text);
+        }
+        
+        .mechanic-view {
+            display: none;
+        }
+        
+        .mechanic-view.active {
+            display: block;
+        }
+        
+        .admin-view.active {
+            display: flex;
+        }
+        
+        .admin-view {
+            display: none;
+        }
+        
+        .mechanic-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 14px;
+        }
+        
+        .stats-bar {
+            display: flex;
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            flex: 1;
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-soft);
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: 700;
+            color: var(--brand);
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: var(--text-soft);
+            font-size: 0.9em;
+        }
+        
+        .service-type-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            background: #fef3c7;
+            color: #78350f;
+            border-radius: 999px;
+            font-size: 0.85em;
+            margin-right: 5px;
+            margin-top: 5px;
+        }
+        
+        .quick-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .quick-btn {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: 0.2s ease;
+        }
+        
+        .quick-btn.complete {
+            background: var(--success);
+            color: white;
+        }
+        
+        .quick-btn.complete:hover {
+            background: #15803d;
+        }
+        
+        .quick-btn.cancel {
+            background: #e2e8f0;
+            color: #334155;
+        }
+        
+        .quick-btn.cancel:hover {
+            background: #cbd5e1;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-soft);
+        }
+        
+        .error-message {
+            background: var(--danger-soft);
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #fecaca;
+        }
+        
+        .success-message {
+            background: var(--success-soft);
+            color: #166534;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #bbf7d0;
+        }
+
+        @media (max-width: 1100px) {
+            .main-container {
+                flex-direction: column;
+                height: auto;
+                overflow-y: auto;
+            }
+
+            .brand-strip,
+            .navbar {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            .booking-panel {
+                width: 100%;
+            }
+
+            .mechanic-cards {
+                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            body {
+                overflow-y: auto;
+            }
+
+            .brand-strip {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .brand-strip h1 {
+                font-size: 1.5rem;
+            }
+
+            .navbar {
+                padding: 12px 16px;
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+
+
+            .navbar .user-info {
+                width: 100%;
+                justify-content: space-between;
+                font-size: 0.9rem;
+            }
+
+            .main-container {
+                padding: 14px;
+                gap: 14px;
+            }
+
+            .calendar {
+                padding: 16px;
+            }
+
+            .calendar-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .calendar-nav {
+                width: 100%;
+                display: grid;
+                grid-template-columns: 1fr;
+            }
+
+            .stats-bar {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <div class="brand-strip">
+            <h1>Marvel Auto <span class="accent">London</span></h1>
+            <div>Trusted Workshop Dashboard</div>
+        </div>
+        <div class="navbar">
+            <div class="ops-label">Internal Operations Dashboard</div>
+            <div class="user-info">
+                <div class="view-toggle" onclick="toggleView()">
+                    <span id="viewToggleText">Switch to Mechanic View</span>
+                </div>
+                <div>{{ role_label }}: {{ user_name }}</div>
+                <a class="logout-btn" href="/logout">Logout</a>
+            </div>
+        </div>
+    </header>
+    
+    <!-- ADMIN VIEW -->
+    <div class="main-container admin-view active">
+        <div class="booking-panel">
+            <h2>📞 New Booking</h2>
+            <div id="formMessage"></div>
+            <form id="bookingForm">
+                <div class="form-group">
+                    <label>Customer Name *</label>
+                    <input type="text" id="customerName" placeholder="John Doe" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Phone Number *</label>
+                    <input type="tel" id="customerPhone" placeholder="(555) 123-4567" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Vehicle Make *</label>
+                    <select id="vehicleMake" required>
+                        <option value="">Select make...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Vehicle Model *</label>
+                    <select id="vehicleModel" required disabled>
+                        <option value="">Select make first...</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Service Type *</label>
+                    <select id="serviceType" required>
+                        <option value="">Select service...</option>
+                        <option value="oil-change">Oil Change</option>
+                        <option value="brake-service">Brake Service</option>
+                        <option value="tire-rotation">Tire Rotation</option>
+                        <option value="engine-diagnostic">Engine Diagnostic</option>
+                        <option value="transmission">Transmission Service</option>
+                        <option value="inspection">General Inspection</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Assigned Mechanic *</label>
+                    <select id="mechanic" required>
+                        <option value="">Select mechanic...</option>
+                        <option value="mike">Mike Johnson</option>
+                        <option value="sarah">Sarah Williams</option>
+                        <option value="david">David Brown</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Issue Description</label>
+                    <textarea id="description" placeholder="Customer reports strange noise when braking..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>Selected Time Slot *</label>
+                    <input type="text" id="selectedSlot" readonly placeholder="Select from calendar" required>
+                </div>
+                
+                <button type="submit" class="btn" id="submitBtn">📅 Book Appointment</button>
+                <button type="reset" class="btn btn-secondary">Clear Form</button>
+            </form>
+        </div>
+        
+        <div class="calendar-section">
+            <div class="calendar">
+                <div class="calendar-header">
+                    <h3 id="currentDate">Today</h3>
+                    <div class="calendar-nav">
+                        <button onclick="changeDate(-1)">← Previous Day</button>
+                        <button onclick="changeDate(0)">Today</button>
+                        <button onclick="changeDate(1)">Next Day →</button>
+                    </div>
+                </div>
+                
+                <div class="time-slots" id="timeSlots">
+                    <div class="loading">Loading available time slots...</div>
+                </div>
+            </div>
+            
+            <div class="bookings-list">
+                <h2>📋 Today's Appointments</h2>
+                <div id="bookingsList">
+                    <div class="loading">Loading appointments...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MECHANIC VIEW -->
+    <div class="main-container mechanic-view">
+        <div style="flex: 1; padding: 25px; overflow-y: auto;">
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <div class="stat-number" id="todayCount">0</div>
+                    <div class="stat-label">Today's Jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="pendingCount">0</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="completedCount">0</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+            </div>
+            
+            <h2>🔧 My Schedule</h2>
+            <div class="mechanic-cards" id="mechanicCards">
+                <div class="loading">Loading schedule...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Configuration
+        const API_BASE_URL = '/api';
+        const RUNNING_FROM_LOCAL_FILE = window.location.protocol === 'file:';
+
+        if (RUNNING_FROM_LOCAL_FILE) {
+            document.body.innerHTML = `
+                <div style="max-width:780px;margin:48px auto;padding:28px;border:1px solid #fecaca;background:#fff7ed;border-radius:12px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#7f1d1d;line-height:1.6;">
+                    <h2 style="margin-bottom:12px;color:#991b1b;">Backend connection unavailable in file mode</h2>
+                    <p style="margin-bottom:10px;">This dashboard uses relative API calls like <code>/api/dashboard</code>. When the HTML is opened directly from disk (<code>file://</code>), those calls cannot reach Flask.</p>
+                    <p style="margin-bottom:10px;">Start the backend with <code>python app.py</code> and open <a href="http://localhost:5000/login">http://localhost:5000/login</a> instead of opening the HTML file directly.</p>
+                    <p style="margin:0;">If you already started Python, confirm the server is running on port <strong>5000</strong>.</p>
+                </div>
+            `;
+            throw new Error('Dashboard opened via file://. Serve through Flask at /login.');
+        }
+
+        // Global state
+        let currentDate = new Date();
+        let selectedSlot = null;
+        let selectedSlotElement = null;
+        let currentView = 'admin';
+        const vehicleCatalog = {
+            'Toyota': ['Camry', 'Corolla', 'RAV4', 'Highlander', 'Tacoma', 'Prius'],
+            'Honda': ['Civic', 'Accord', 'CR-V', 'Pilot', 'Odyssey', 'HR-V'],
+            'Ford': ['F-150', 'Escape', 'Explorer', 'Mustang', 'Edge', 'Ranger'],
+            'Chevrolet': ['Silverado', 'Equinox', 'Tahoe', 'Malibu', 'Traverse', 'Suburban'],
+            'Nissan': ['Altima', 'Sentra', 'Rogue', 'Murano', 'Pathfinder', 'Frontier'],
+            'Hyundai': ['Elantra', 'Sonata', 'Tucson', 'Santa Fe', 'Palisade', 'Kona'],
+            'Kia': ['Forte', 'K5', 'Sportage', 'Sorento', 'Telluride', 'Soul'],
+            'BMW': ['3 Series', '5 Series', 'X3', 'X5', 'X1', '7 Series'],
+            'Mercedes-Benz': ['C-Class', 'E-Class', 'GLC', 'GLE', 'A-Class', 'S-Class'],
+            'Audi': ['A3', 'A4', 'Q3', 'Q5', 'A6', 'Q7'],
+            'Volkswagen': ['Jetta', 'Passat', 'Tiguan', 'Atlas', 'Golf', 'Taos'],
+            'Subaru': ['Outback', 'Forester', 'Crosstrek', 'Impreza', 'Legacy', 'Ascent'],
+            'Mazda': ['Mazda3', 'Mazda6', 'CX-5', 'CX-30', 'CX-9', 'MX-5 Miata'],
+            'Jeep': ['Wrangler', 'Grand Cherokee', 'Cherokee', 'Compass', 'Renegade', 'Gladiator'],
+            'Ram': ['1500', '2500', '3500', 'ProMaster', 'ProMaster City'],
+            'GMC': ['Sierra', 'Terrain', 'Acadia', 'Yukon', 'Canyon']
+        };
+        
+        // Helper function to format date
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+        
+        function formatDisplayDate(date) {
+            return date.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+        }
+        
+        // Initialize the app
+        async function init() {
+            initializeVehicleDropdowns();
+            updateDateDisplay();
+            await loadDashboardData();
+        }
+
+        function initializeVehicleDropdowns() {
+            const makeSelect = document.getElementById('vehicleMake');
+            const form = document.getElementById('bookingForm');
+
+            Object.keys(vehicleCatalog).sort().forEach(make => {
+                const option = document.createElement('option');
+                option.value = make;
+                option.textContent = make;
+                makeSelect.appendChild(option);
+            });
+
+            makeSelect.addEventListener('change', handleMakeChange);
+            form.addEventListener('reset', () => {
+                setTimeout(() => {
+                    handleMakeChange();
+                    handleMechanicChange();
+                }, 0);
+            });
+            document.getElementById('mechanic').addEventListener('change', handleMechanicChange);
+        }
+
+        function handleMakeChange() {
+            const makeSelect = document.getElementById('vehicleMake');
+            const modelSelect = document.getElementById('vehicleModel');
+            const selectedMake = makeSelect.value;
+
+            modelSelect.innerHTML = '';
+
+            const placeholderOption = document.createElement('option');
+            placeholderOption.value = '';
+
+            if (!selectedMake) {
+                placeholderOption.textContent = 'Select make first...';
+                modelSelect.appendChild(placeholderOption);
+                modelSelect.disabled = true;
+                return;
+            }
+
+            placeholderOption.textContent = 'Select model...';
+            modelSelect.appendChild(placeholderOption);
+
+            vehicleCatalog[selectedMake].forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+            });
+
+            modelSelect.disabled = false;
+        }
+        
+
+        function handleMechanicChange() {
+            selectedSlot = null;
+            selectedSlotElement = null;
+            document.getElementById('selectedSlot').value = '';
+            loadDashboardData();
+        }
+
+        function updateDateDisplay() {
+            document.getElementById('currentDate').textContent = formatDisplayDate(currentDate);
+        }
+        
+        async function loadDashboardData() {
+            const dateStr = formatDate(currentDate);
+
+            try {
+                const mechanic = document.getElementById('mechanic').value;
+                const query = mechanic ? `date=${dateStr}&mechanic=${encodeURIComponent(mechanic)}` : `date=${dateStr}`;
+                const response = await fetch(`${API_BASE_URL}/dashboard?${query}`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error('Failed to load dashboard data');
+                }
+
+                renderTimeSlots(data.slots);
+                displayBookings(data.bookings);
+                displayMechanicStats(data.stats);
+                displayMechanicCards(data.bookings);
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+                document.getElementById('timeSlots').innerHTML = '<p class="error-message">Error connecting to server</p>';
+                document.getElementById('bookingsList').innerHTML = '<p class="error-message">Error connecting to server</p>';
+            }
+        }
+
+        // Load available time slots from API
+        async function loadTimeSlots() {
+            await loadDashboardData();
+        }
+
+        function renderTimeSlots(slots) {
+            const container = document.getElementById('timeSlots');
+            container.innerHTML = '';
+
+            slots.forEach(slot => {
+                const slotDiv = document.createElement('div');
+                slotDiv.className = `time-slot ${!slot.available ? 'booked' : ''}`;
+                slotDiv.innerHTML = `
+                    <div class="time">${slot.time}</div>
+                    <div class="status">${slot.available ? `Available (${slot.available_mechanics || 1} mechanic${(slot.available_mechanics || 1) === 1 ? '' : 's'})` : 'Booked'}</div>
+                `;
+
+                if (slot.available) {
+                    slotDiv.onclick = () => selectTimeSlot(slot.time, slotDiv);
+                }
+
+                container.appendChild(slotDiv);
+            });
+        }
+
+        async function loadBookings() {
+            await loadDashboardData();
+        }
+
+
+        function selectTimeSlot(time, element) {
+            if (element.classList.contains('booked')) return;
+            
+            // Remove previous selection
+            if (selectedSlotElement) {
+                selectedSlotElement.classList.remove('selected');
+            }
+            
+            // Select new slot
+            element.classList.add('selected');
+            selectedSlotElement = element;
+            selectedSlot = time;
+            document.getElementById('selectedSlot').value = time;
+        }
+        
+        // Load bookings from API
+        function displayBookings(bookings) {
+            const container = document.getElementById('bookingsList');
+            
+            if (bookings.length === 0) {
+                container.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">No appointments yet</p>';
+                return;
+            }
+            
+            const serviceNames = {
+                'oil-change': 'Oil Change',
+                'brake-service': 'Brake Service',
+                'tire-rotation': 'Tire Rotation',
+                'engine-diagnostic': 'Engine Diagnostic',
+                'transmission': 'Transmission Service',
+                'inspection': 'General Inspection',
+                'other': 'Other Service'
+            };
+            
+            container.innerHTML = bookings.map(booking => `
+                <div class="booking-card">
+                    <div class="booking-header">
+                        <div class="booking-time">${booking.time_slot}</div>
+                        <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
+                    </div>
+                    <div class="booking-details">
+                        <p><strong>Customer:</strong> ${booking.customer_name}</p>
+                        <p><strong>Phone:</strong> ${booking.phone}</p>
+                        <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
+                        <p><strong>Service:</strong> ${serviceNames[booking.service_type]}</p>
+                        <p><strong>Mechanic:</strong> ${getMechanicName(booking.mechanic)}</p>
+                        ${booking.description ? `<p><strong>Notes:</strong> ${booking.description}</p>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function getMechanicName(id) {
+            const names = {
+                'mike': 'Mike Johnson',
+                'sarah': 'Sarah Williams',
+                'david': 'David Brown'
+            };
+            return names[id] || id;
+        }
+        
+        // Handle form submission
+        document.getElementById('bookingForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const messageDiv = document.getElementById('formMessage');
+            
+            const bookingData = {
+                customer_name: document.getElementById('customerName').value,
+                phone: document.getElementById('customerPhone').value,
+                vehicle: `${document.getElementById('vehicleMake').value} ${document.getElementById('vehicleModel').value}`.trim(),
+                service_type: document.getElementById('serviceType').value,
+                mechanic: document.getElementById('mechanic').value,
+                description: document.getElementById('description').value,
+                time_slot: selectedSlot,
+                booking_date: formatDate(currentDate)
+            };
+            
+            if (!bookingData.time_slot) {
+                messageDiv.innerHTML = '<div class="error-message">Please select a time slot from the calendar</div>';
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Booking...';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(bookingData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    messageDiv.innerHTML = '<div class="success-message">✅ Appointment booked successfully!</div>';
+                    
+                    // Reset form
+                    this.reset();
+                    document.getElementById('selectedSlot').value = '';
+                    selectedSlot = null;
+                    if (selectedSlotElement) {
+                        selectedSlotElement.classList.remove('selected');
+                        selectedSlotElement = null;
+                    }
+                    
+                    // Reload data
+                    await loadDashboardData();
+                    
+                    setTimeout(() => {
+                        messageDiv.innerHTML = '';
+                    }, 3000);
+                } else {
+                    messageDiv.innerHTML = `<div class="error-message">❌ ${data.error}</div>`;
+                }
+            } catch (error) {
+                console.error('Error creating booking:', error);
+                messageDiv.innerHTML = '<div class="error-message">❌ Error connecting to server</div>';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '📅 Book Appointment';
+            }
+        });
+        
+        // Load mechanic view
+        async function loadMechanicView() {
+            await loadDashboardData();
+        }
+
+        function displayMechanicStats(stats) {
+            document.getElementById('todayCount').textContent = stats.today_total;
+            document.getElementById('pendingCount').textContent = stats.pending;
+            document.getElementById('completedCount').textContent = stats.completed;
+        }
+
+        function displayMechanicCards(bookings) {
+            const container = document.getElementById('mechanicCards');
+            
+            if (bookings.length === 0) {
+                container.innerHTML = '<p style="color: #999; text-align: center; padding: 40px; grid-column: 1/-1;">No jobs assigned yet</p>';
+                return;
+            }
+            
+            const serviceNames = {
+                'oil-change': 'Oil Change',
+                'brake-service': 'Brake Service',
+                'tire-rotation': 'Tire Rotation',
+                'engine-diagnostic': 'Engine Diagnostic',
+                'transmission': 'Transmission Service',
+                'inspection': 'General Inspection',
+                'other': 'Other Service'
+            };
+            
+            container.innerHTML = bookings.map(booking => `
+                <div class="booking-card">
+                    <div class="booking-header">
+                        <div class="booking-time">${booking.time_slot}</div>
+                        <span class="booking-badge badge-${booking.status}">${booking.status.toUpperCase()}</span>
+                    </div>
+                    <div class="booking-details">
+                        <p><strong>Customer:</strong> ${booking.customer_name}</p>
+                        <p><strong>Phone:</strong> ${booking.phone}</p>
+                        <p><strong>Vehicle:</strong> ${booking.vehicle}</p>
+                        <span class="service-type-tag">${serviceNames[booking.service_type]}</span>
+                        ${booking.description ? `<p style="margin-top: 10px;"><strong>Issue:</strong> ${booking.description}</p>` : ''}
+                    </div>
+                    <div class="quick-actions">
+                        <button class="quick-btn complete" onclick="completeJob(${booking.id})">✓ Mark Complete</button>
+                        <button class="quick-btn cancel" onclick="cancelJob(${booking.id})">✗ Cancel</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        async function completeJob(id) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ status: 'completed' })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    await loadDashboardData();
+                }
+            } catch (error) {
+                console.error('Error completing job:', error);
+                alert('Error completing job');
+            }
+        }
+        
+        async function cancelJob(id) {
+            if (!confirm('Are you sure you want to cancel this appointment?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    await loadDashboardData();
+                }
+            } catch (error) {
+                console.error('Error cancelling job:', error);
+                alert('Error cancelling job');
+            }
+        }
+        
+        function toggleView() {
+            const adminView = document.querySelector('.admin-view');
+            const mechanicView = document.querySelector('.mechanic-view');
+            const toggleText = document.getElementById('viewToggleText');
+            
+            if (currentView === 'admin') {
+                adminView.classList.remove('active');
+                mechanicView.classList.add('active');
+                toggleText.textContent = 'Switch to Admin View';
+                currentView = 'mechanic';
+            } else {
+                mechanicView.classList.remove('active');
+                adminView.classList.add('active');
+                toggleText.textContent = 'Switch to Mechanic View';
+                currentView = 'admin';
+            }
+        }
+        
+        async function changeDate(days) {
+            if (days === 0) {
+                currentDate = new Date();
+            } else {
+                currentDate.setDate(currentDate.getDate() + days);
+            }
+            
+            updateDateDisplay();
+            selectedSlot = null;
+            selectedSlotElement = null;
+            document.getElementById('selectedSlot').value = '';
+            
+            await loadDashboardData();
+        }
+        
+        // Initialize on page load
+        init();
+    </script>
+</body>
+</html>
