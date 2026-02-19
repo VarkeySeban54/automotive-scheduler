@@ -742,7 +742,7 @@
     </div>
 
     <script>
-        const API_BASE_URL = 'http://localhost:5000/api';
+        const API_BASE_URL = '/api';
         const SLOT_MINUTES = 30;
         const DAY_START = '08:00';
         const DAY_END = '18:00';
@@ -753,6 +753,25 @@
         let currentView = 'admin';
         let selectedSlotRange = { startIndex: null, endIndex: null };
         let lastLoadedSlots = [];
+
+
+        async function apiFetch(path, options = {}) {
+            const response = await fetch(`${API_BASE_URL}${path}`, {
+                credentials: 'include',
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(options.headers || {})
+                }
+            });
+
+            if (response.status === 401) {
+                window.location.href = '/login';
+                throw new Error('Authentication required. Please log in.');
+            }
+
+            return response;
+        }
 
         const vehicleCatalog = {
             'Toyota': ['Camry', 'Corolla', 'RAV4', 'Highlander', 'Tacoma', 'Prius'],
@@ -1004,9 +1023,9 @@
             const selectedMechanic = document.getElementById('mechanic').value;
             try {
                 const [bookingsRes, slotsRes, mechanicRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/bookings?date=${dateStr}`),
-                    fetch(`${API_BASE_URL}/timeslots?date=${dateStr}${selectedMechanic ? `&mechanic=${encodeURIComponent(selectedMechanic)}` : ''}`),
-                    fetch(`${API_BASE_URL}/bookings?date=${dateStr}&mechanic=${encodeURIComponent(LOGGED_IN_MECHANIC_ID)}`)
+                    apiFetch(`/bookings?date=${dateStr}`),
+                    apiFetch(`/timeslots?date=${dateStr}${selectedMechanic ? `&mechanic=${encodeURIComponent(selectedMechanic)}` : ''}`),
+                    apiFetch(`/bookings?date=${dateStr}&mechanic=${encodeURIComponent(LOGGED_IN_MECHANIC_ID)}`)
                 ]);
                 const bookingsData = await bookingsRes.json();
                 const slotsData = await slotsRes.json();
@@ -1027,7 +1046,7 @@
 
         async function completeJob(id) {
             try {
-                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status:'completed' }) });
+                const response = await apiFetch(`/bookings/${id}`, { method:'PUT', body: JSON.stringify({ status:'completed' }) });
                 const data = await response.json();
                 if (data.success) await loadDashboardData();
             } catch (error) { console.error('Error completing job:', error); }
@@ -1036,7 +1055,7 @@
         async function cancelJob(id) {
             if (!confirm('Are you sure you want to cancel this appointment?')) return;
             try {
-                const response = await fetch(`${API_BASE_URL}/bookings/${id}`, { method:'DELETE' });
+                const response = await apiFetch(`/bookings/${id}`, { method:'DELETE', headers: {} });
                 const data = await response.json();
                 if (data.success) await loadDashboardData();
             } catch (error) { console.error('Error cancelling job:', error); }
@@ -1080,7 +1099,7 @@
             const submitBtn = document.getElementById('submitBtn');
             submitBtn.disabled = true; submitBtn.textContent = 'Booking...';
             try {
-                const response = await fetch(`${API_BASE_URL}/bookings`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+                const response = await apiFetch('/bookings', { method:'POST', body: JSON.stringify(payload) });
                 const data = await response.json();
                 if (data.success) {
                     showFormMessage('✅ Appointment booked successfully!', false);
