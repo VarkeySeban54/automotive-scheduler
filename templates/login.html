@@ -15,6 +15,8 @@
             --danger: #b91c1c;
             --danger-bg: #fee2e2;
             --border: #d1d5db;
+            --success: #166534;
+            --success-bg: #dcfce7;
         }
         * { box-sizing: border-box; }
         body {
@@ -104,6 +106,14 @@
             padding: 12px;
             cursor: pointer;
         }
+        .message {
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 10px;
+            background: var(--success-bg);
+            color: var(--success);
+            font-weight: 600;
+        }
         .error {
             margin-top: 12px;
             padding: 10px;
@@ -147,6 +157,10 @@
             </fieldset>
 
             <button class="btn" type="submit">Login</button>
+
+            {% if message %}
+            <p class="message" role="status">{{ message }}</p>
+            {% endif %}
 
             {% if error %}
             <p class="error" role="alert">{{ error }}</p>

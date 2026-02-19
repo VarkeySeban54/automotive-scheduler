@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import secrets
 
-from flask import Flask, request, jsonify, redirect, render_template, session, url_for, send_from_directory
+from flask import Flask, request, jsonify, redirect, render_template, session, url_for
 from flask_cors import CORS
 from datetime import datetime, timedelta
 
@@ -325,7 +325,10 @@ def login_page():
         if session.get('role') == ROLE_MECHANIC:
             return redirect('/mechanic/dashboard')
         return redirect('/admin/dashboard')
-    return render_template('login.html')
+    logout_message = None
+    if request.args.get('logged_out') == '1':
+        logout_message = 'You have been logged out successfully.'
+    return render_template('login.html', message=logout_message)
 
 
 @app.route('/auth/login', methods=['POST'])
@@ -367,13 +370,19 @@ def login():
 @app.route('/logout', methods=['GET'])
 def logout():
     session.clear()
-    return redirect('/login')
+    return redirect(url_for('login_page', logged_out='1'))
 
 
 @app.route('/admin/dashboard', methods=['GET'])
 @roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
 def admin_dashboard():
-    return send_from_directory(app.root_path, 'index.html')
+    role = session.get('role', ROLE_FRONTDESK)
+    role_label = 'Admin' if role == ROLE_ADMIN else 'Front Desk'
+    return render_template(
+        'admin_dashboard.html',
+        user_name=session.get('name', 'User'),
+        role_label=role_label,
+    )
 
 
 @app.route('/admin/settings', methods=['GET'])

@@ -78,11 +78,44 @@ class AuthRoleTests(unittest.TestCase):
 
         logout = self.client.get('/logout', follow_redirects=False)
         self.assertEqual(logout.status_code, 302)
-        self.assertTrue(logout.headers['Location'].endswith('/login'))
+        self.assertTrue(logout.headers['Location'].endswith('/login?logged_out=1'))
+
+        login_page = self.client.get('/login?logged_out=1')
+        self.assertEqual(login_page.status_code, 200)
+        self.assertIn('You have been logged out successfully.', login_page.get_data(as_text=True))
 
         after_logout = self.client.get('/api/dashboard', follow_redirects=False)
         self.assertEqual(after_logout.status_code, 401)
         self.assertEqual(after_logout.get_json()['error'], 'Authentication required')
+
+        dashboard_after_logout = self.client.get('/admin/dashboard', follow_redirects=False)
+        self.assertEqual(dashboard_after_logout.status_code, 302)
+        self.assertTrue(dashboard_after_logout.headers['Location'].endswith('/login'))
+
+    def test_dashboards_render_logout_button_and_user_name(self):
+        admin_client = scheduler_app.app.test_client()
+        admin_client.post(
+            '/auth/login',
+            data={'email': 'admin@autoshop.local', 'password': 'Admin123!', 'role': 'admin'},
+            follow_redirects=False,
+        )
+        admin_dashboard = admin_client.get('/admin/dashboard')
+        admin_html = admin_dashboard.get_data(as_text=True)
+        self.assertEqual(admin_dashboard.status_code, 200)
+        self.assertIn('Admin: System Admin', admin_html)
+        self.assertIn('href="/logout"', admin_html)
+
+        mechanic_client = scheduler_app.app.test_client()
+        mechanic_client.post(
+            '/auth/login',
+            data={'email': 'mechanic@autoshop.local', 'password': 'Mechanic123!', 'role': 'mechanic'},
+            follow_redirects=False,
+        )
+        mechanic_dashboard = mechanic_client.get('/mechanic/dashboard')
+        mechanic_html = mechanic_dashboard.get_data(as_text=True)
+        self.assertEqual(mechanic_dashboard.status_code, 200)
+        self.assertIn('Mechanic: Lead Mechanic', mechanic_html)
+        self.assertIn('href="/logout"', mechanic_html)
 
     def test_passwords_are_hashed(self):
         conn = scheduler_app.get_db_connection()
