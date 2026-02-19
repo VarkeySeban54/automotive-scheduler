@@ -77,16 +77,9 @@
             gap: 20px;
         }
 
-        .primary-links {
-            display: flex;
-            gap: 18px;
-            flex-wrap: wrap;
-            font-weight: 600;
-            font-size: 0.98rem;
-        }
-
-        .primary-links span {
-            cursor: default;
+        .ops-label {
+            font-weight: 700;
+            letter-spacing: 0.2px;
         }
 
         .navbar .user-info {
@@ -133,34 +126,6 @@
             flex: 1;
             padding: 0;
             overflow-y: auto;
-        }
-
-        .hero-copy {
-            background: linear-gradient(110deg, rgba(8, 9, 11, 0.94), rgba(8, 9, 11, 0.75));
-            border: 1px solid rgba(245, 204, 31, 0.35);
-            border-radius: 16px;
-            color: #f8fafc;
-            padding: 26px;
-            margin-bottom: 18px;
-        }
-
-        .hero-copy h2 {
-            color: #f8fafc;
-            font-size: clamp(1.6rem, 3vw, 2.4rem);
-            line-height: 1.25;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.6px;
-        }
-
-        .hero-copy h2 .highlight {
-            color: var(--brand);
-        }
-
-        .hero-copy p {
-            color: #e2e8f0;
-            max-width: 68ch;
-            line-height: 1.6;
         }
 
         h2 {
@@ -565,10 +530,6 @@
                 align-items: flex-start;
             }
 
-            .primary-links {
-                font-size: 0.9rem;
-                gap: 12px;
-            }
 
             .navbar .user-info {
                 width: 100%;
@@ -610,14 +571,7 @@
             <div>Trusted Workshop Dashboard</div>
         </div>
         <div class="navbar">
-            <div class="primary-links">
-                <span>Home</span>
-                <span>Services</span>
-                <span>About Us</span>
-                <span>Gallery</span>
-                <span>Payment &amp; Service History</span>
-                <span>Contact Us</span>
-            </div>
+            <div class="ops-label">Internal Operations Dashboard</div>
             <div class="user-info">
                 <div class="view-toggle" onclick="toggleView()">
                     <span id="viewToggleText">Switch to Mechanic View</span>
@@ -697,10 +651,6 @@
         </div>
         
         <div class="calendar-section">
-            <section class="hero-copy">
-                <h2>Reliable Auto Repair You Can <span class="highlight">Trust</span></h2>
-                <p>Keep every customer moving with fast diagnostics, transparent pricing, and high-quality service outcomes.</p>
-            </section>
             <div class="calendar">
                 <div class="calendar-header">
                     <h3 id="currentDate">Today</h3>
