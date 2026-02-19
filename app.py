@@ -164,7 +164,13 @@ def roles_required(*allowed_roles):
                 return redirect(url_for('login_page'))
 
             if session.get('role') not in allowed_roles:
-                return jsonify({'success': False, 'error': 'Forbidden'}), 403
+                if request.path.startswith('/api/'):
+                    return jsonify({'success': False, 'error': 'Forbidden'}), 403
+
+                user_role = session.get('role')
+                if user_role == ROLE_MECHANIC:
+                    return redirect('/mechanic/dashboard')
+                return redirect('/admin/dashboard')
 
             return func(*args, **kwargs)
 
@@ -381,6 +387,7 @@ def admin_dashboard():
     return render_template(
         'admin_dashboard.html',
         user_name=session.get('name', 'User'),
+        role=role,
         role_label=role_label,
     )
 
@@ -391,10 +398,16 @@ def admin_settings():
     return jsonify({'success': True, 'message': 'Admin-only settings endpoint'})
 
 
+@app.route('/user-management', methods=['GET'])
+@roles_required(ROLE_ADMIN)
+def user_management_page():
+    return render_template('user_management.html', user_name=session.get('name', 'Admin'))
+
+
 @app.route('/admin/users', methods=['GET'])
 @roles_required(ROLE_ADMIN)
 def admin_users_page():
-    return render_template('user_management.html', user_name=session.get('name', 'Admin'))
+    return redirect('/user-management')
 
 
 @app.route('/api/admin/users', methods=['GET'])
@@ -439,6 +452,8 @@ def admin_create_user():
 
     if role != ROLE_MECHANIC:
         mechanic_id = None
+    elif not mechanic_id:
+        return jsonify({'success': False, 'error': 'Mechanic mapping is required for mechanic role'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
