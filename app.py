@@ -939,44 +939,64 @@ def get_mechanic_bookings(mechanic_id):
 @app.route('/api/mechanic/jobs', methods=['GET'])
 @roles_required(ROLE_MECHANIC)
 def get_assigned_jobs():
-    mechanic_id = session.get('mechanic_id')
-    if not mechanic_id:
-        return jsonify({'success': False, 'error': 'Mechanic account is not mapped'}), 400
-
-    date = request.args.get('date')
+    date = resolve_target_date(request.args.get('date'))
+    status = request.args.get('status')
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    query = 'SELECT * FROM bookings WHERE mechanic = ?'
-    params = [mechanic_id]
-    if date:
-        query += ' AND booking_date = ?'
-        params.append(date)
+
+    query = '''
+        SELECT b.*, m.name as mechanic_name
+        FROM bookings b
+        LEFT JOIN mechanics m ON m.mechanic_id = b.mechanic
+        WHERE b.mechanic IS NOT NULL AND TRIM(b.mechanic) != ''
+          AND b.booking_date = ?
+    '''
+    params = [date]
+
+    if status:
+        query += ' AND b.status = ?'
+        params.append(status)
+    else:
+        query += " AND b.status IN ('pending', 'in_progress')"
+
     query += ' ORDER BY booking_date ASC, time_slot ASC'
+
     cursor.execute(query, params)
     bookings = [dict(row) for row in cursor.fetchall()]
     conn.close()
 
-    return jsonify({'success': True, 'mechanic_id': mechanic_id, 'jobs': bookings})
+    return jsonify({'success': True, 'date': date, 'jobs': bookings})
 
 
 @app.route('/api/mechanic/jobs/<int:booking_id>/status', methods=['PUT'])
 @roles_required(ROLE_MECHANIC)
 def update_mechanic_job_status(booking_id):
     new_status = (request.json or {}).get('status', '').strip().lower()
-    if new_status not in {'completed', 'cancelled'}:
+    if new_status not in {'pending', 'in_progress', 'completed'}:
         return jsonify({'success': False, 'error': 'Invalid status'}), 400
-
-    mechanic_id = session.get('mechanic_id')
-    if not mechanic_id:
-        return jsonify({'success': False, 'error': 'Mechanic account is not mapped'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('UPDATE bookings SET status = ? WHERE id = ? AND mechanic = ?', (new_status, booking_id, mechanic_id))
-    if cursor.rowcount == 0:
+
+    cursor.execute('SELECT status, mechanic FROM bookings WHERE id = ?', (booking_id,))
+    booking = cursor.fetchone()
+    if not booking or not booking['mechanic']:
         conn.close()
         return jsonify({'success': False, 'error': 'Booking not found'}), 404
+
+    current_status = booking['status']
+    valid_transitions = {
+        'pending': {'in_progress'},
+        'in_progress': {'completed'},
+        'completed': set(),
+        'cancelled': set(),
+    }
+    if new_status not in valid_transitions.get(current_status, set()):
+        conn.close()
+        return jsonify({'success': False, 'error': f'Cannot move status from {current_status} to {new_status}'}), 400
+
+    cursor.execute('UPDATE bookings SET status = ? WHERE id = ?', (new_status, booking_id))
 
     conn.commit()
     conn.close()

@@ -243,5 +243,74 @@ class AuthRoleTests(unittest.TestCase):
         response = self.client.get('/api/admin/users')
         self.assertEqual(response.status_code, 403)
 
+    def test_mechanic_jobs_are_shop_wide_for_selected_date(self):
+        self.client.post(
+            '/auth/login',
+            data={'email': 'mechanic@autoshop.local', 'password': 'Mechanic123!', 'role': 'mechanic'},
+            follow_redirects=False,
+        )
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            INSERT INTO bookings (customer_name, phone, vehicle, service_type,
+                                  mechanic, description, time_slot, booking_date, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            ('Alice', '999', 'Toyota Camry', 'Oil Change', 'ajith-mathew', 'Engine noise', '9:00 AM', '2030-01-10', 'pending'),
+        )
+        cursor.execute(
+            '''
+            INSERT INTO bookings (customer_name, phone, vehicle, service_type,
+                                  mechanic, description, time_slot, booking_date, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            ('Bob', '888', 'Honda Civic', 'Brake Service', 'alvin-antony', 'Brake squeal', '9:30 AM', '2030-01-10', 'in_progress'),
+        )
+        conn.commit()
+        conn.close()
+
+        response = self.client.get('/api/mechanic/jobs?date=2030-01-10')
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['date'], '2030-01-10')
+        self.assertEqual(len(payload['jobs']), 2)
+
+        mechanic_names = {job['mechanic'] for job in payload['jobs']}
+        self.assertIn('ajith-mathew', mechanic_names)
+        self.assertIn('alvin-antony', mechanic_names)
+
+    def test_mechanic_status_transition_rules(self):
+        self.client.post(
+            '/auth/login',
+            data={'email': 'mechanic@autoshop.local', 'password': 'Mechanic123!', 'role': 'mechanic'},
+            follow_redirects=False,
+        )
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            INSERT INTO bookings (customer_name, phone, vehicle, service_type,
+                                  mechanic, description, time_slot, booking_date, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            ('Charlie', '777', 'Ford Focus', 'Diagnostics', 'ajith-mathew', 'Check engine', '10:00 AM', '2030-01-11', 'pending'),
+        )
+        booking_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        invalid = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'completed'})
+        self.assertEqual(invalid.status_code, 400)
+
+        in_progress = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'in_progress'})
+        self.assertEqual(in_progress.status_code, 200)
+
+        completed = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'completed'})
+        self.assertEqual(completed.status_code, 200)
+
 if __name__ == '__main__':
     unittest.main()
