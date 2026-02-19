@@ -5,40 +5,161 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>User Management</title>
     <style>
-        body { font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }
-        .container { max-width: 980px; margin: 0 auto; padding: 20px; }
-        .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 16px; }
-        h1, h2 { margin-top: 0; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-        label { display:block; font-size: .9rem; margin-bottom:4px; color:#334155; }
-        input, select { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; }
-        button { padding: 10px 12px; border: 0; border-radius: 8px; background:#f5cc1f; color:#111827; font-weight:700; cursor:pointer; }
-        table { width:100%; border-collapse: collapse; }
-        th, td { border-bottom: 1px solid #e2e8f0; padding: 8px; text-align: left; font-size: .92rem; }
-        .actions { display:flex; gap:8px; flex-wrap: wrap; }
-        .muted { color:#64748b; }
-        .message { margin-top: 10px; font-weight: 600; }
-        .error { color: #b91c1c; }
-        .ok { color: #166534; }
-        .top-links { display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px; }
+        :root {
+            --bg: #0a0b0f;
+            --surface: #ffffff;
+            --surface-muted: #f8fafc;
+            --text: #1f2937;
+            --text-soft: #64748b;
+            --brand: #f5cc1f;
+            --brand-dark: #e0b705;
+            --border: #dbe4f0;
+            --danger: #dc2626;
+            --danger-soft: #fee2e2;
+            --success: #16a34a;
+            --success-soft: #dcfce7;
+            --shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.06);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background:
+                radial-gradient(circle at 15% 25%, rgba(245, 204, 31, 0.08), transparent 30%),
+                radial-gradient(circle at 90% 75%, rgba(245, 204, 31, 0.06), transparent 36%),
+                #08090b;
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .site-header { position: sticky; top: 0; z-index: 20; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35); }
+        .brand-strip {
+            background: #ffffff;
+            color: #0f172a;
+            padding: 18px 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .brand-strip h1 { margin: 0; font-size: 2rem; letter-spacing: 0.3px; }
+        .brand-strip .accent { color: var(--brand-dark); }
+
+        .navbar {
+            background: var(--brand);
+            color: #0f172a;
+            padding: 14px 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .ops-label { font-weight: 700; letter-spacing: 0.2px; }
+
+        .user-info { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+
+        .nav-link,
+        .logout-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #111827;
+            color: var(--brand);
+            border: 1px solid #111827;
+            border-radius: 999px;
+            padding: 10px 16px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: 0.2s ease;
+        }
+
+        .nav-link:hover,
+        .logout-btn:hover { background: #000000; transform: translateY(-1px); }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 22px; }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 22px;
+            margin-bottom: 18px;
+            box-shadow: var(--shadow-soft);
+        }
+
+        h2 { margin: 0 0 14px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+        label { display: block; margin-bottom: 6px; color: var(--text-soft); font-weight: 600; font-size: 0.88rem; }
+
+        input, select {
+            width: 100%;
+            padding: 11px 12px;
+            border: 1px solid var(--border);
+            background: var(--surface-muted);
+            border-radius: 10px;
+            font-size: 0.96rem;
+        }
+
+        input:focus, select:focus { outline: none; border-color: var(--brand); background: #fff; }
+
+        button {
+            padding: 10px 14px;
+            border: 0;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+            color: #111827;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; font-size: .92rem; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .muted { color: #64748b; margin-top: 0; }
+        .message { margin-top: 10px; font-weight: 700; padding: 10px 12px; border-radius: 10px; display: none; }
+        .error { color: #7f1d1d; background: var(--danger-soft); display: block; }
+        .ok { color: #166534; background: var(--success-soft); display: block; }
+        .hidden { display: none; }
+        .error-banner {
+            margin-top: 12px;
+            background: var(--danger-soft);
+            color: #7f1d1d;
+            padding: 10px 12px;
+            border-radius: 10px;
+            display: none;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
-    <main class="container">
-        <div class="top-links">
-            <h1>User Management</h1>
-            <div><a href="/admin/dashboard">Back to dashboard</a> · <a href="/logout">Logout</a></div>
+    <header class="site-header">
+        <div class="brand-strip">
+            <h1>Marvel Auto <span class="accent">London</span></h1>
+            <div>Trusted Workshop Dashboard</div>
         </div>
+        <div class="navbar">
+            <div class="ops-label">Internal Operations Dashboard</div>
+            <div class="user-info">
+                <a class="nav-link" href="/admin/dashboard">Back to Dashboard</a>
+                <div>Admin: {{ user_name }}</div>
+                <a class="logout-btn" href="/logout">Logout</a>
+            </div>
+        </div>
+    </header>
 
+    <main class="container">
         <section class="card">
             <h2>Create User</h2>
             <form id="createForm">
                 <div class="grid">
-                    <div><label for="name">Name</label><input id="name" required /></div>
-                    <div><label for="email">Email</label><input id="email" type="email" required /></div>
-                    <div><label for="password">Password</label><input id="password" type="password" minlength="8" required /></div>
+                    <div><label for="name">Name *</label><input id="name" required /></div>
+                    <div><label for="email">Email *</label><input id="email" type="email" required /></div>
+                    <div><label for="password">Password *</label><input id="password" type="password" minlength="8" required /></div>
                     <div>
-                        <label for="role">Role</label>
+                        <label for="role">Role *</label>
                         <select id="role" required>
                             <option value="admin">Admin</option>
                             <option value="frontdesk">Front Desk</option>
@@ -52,9 +173,9 @@
                             <option value="0">Inactive</option>
                         </select>
                     </div>
-                    <div>
-                        <label for="mechanicId">Mechanic Mapping (for mechanic role)</label>
-                        <select id="mechanicId"><option value="">None</option></select>
+                    <div id="mechanicCreateWrap" class="hidden">
+                        <label for="mechanicId">Mechanic Mapping *</label>
+                        <select id="mechanicId"><option value="">Select mechanic...</option></select>
                     </div>
                 </div>
                 <div style="margin-top: 12px;"><button type="submit">Create User</button></div>
@@ -64,7 +185,8 @@
 
         <section class="card">
             <h2>Existing Users</h2>
-            <p class="muted">Edit name/role/status/mechanic mapping inline and save.</p>
+            <p class="muted">Edit role/status/mechanic mapping inline and save.</p>
+            <div class="error-banner" id="tableErrorBanner"></div>
             <table>
                 <thead>
                     <tr>
@@ -81,26 +203,59 @@
         const usersBody = document.getElementById('usersBody');
         const createMessage = document.getElementById('createMessage');
         const tableMessage = document.getElementById('tableMessage');
+        const tableErrorBanner = document.getElementById('tableErrorBanner');
         const mechanicSelect = document.getElementById('mechanicId');
+        const createRoleSelect = document.getElementById('role');
+        const mechanicCreateWrap = document.getElementById('mechanicCreateWrap');
 
         function message(el, text, isError=false) {
             el.textContent = text;
             el.className = `message ${isError ? 'error' : 'ok'}`;
         }
 
+        function setTableError(messageText='') {
+            if (!messageText) {
+                tableErrorBanner.style.display = 'none';
+                tableErrorBanner.textContent = '';
+                return;
+            }
+            tableErrorBanner.textContent = messageText;
+            tableErrorBanner.style.display = 'block';
+        }
+
         function mechanicOptions(mechanics, selected='') {
-            const options = ['<option value="">None</option>'];
+            const options = ['<option value="">Select mechanic...</option>'];
             for (const m of mechanics) {
                 options.push(`<option value="${m.mechanic_id}" ${selected===m.mechanic_id?'selected':''}>${m.name} (${m.mechanic_id})</option>`);
             }
             return options.join('');
         }
 
+        function toggleCreateMechanicRequirement() {
+            const isMechanic = createRoleSelect.value === 'mechanic';
+            mechanicCreateWrap.classList.toggle('hidden', !isMechanic);
+            if (!isMechanic) {
+                mechanicSelect.value = '';
+            }
+        }
+
+        function updateRowMechanicState(row) {
+            const roleSelect = row.querySelector('[data-field="role"]');
+            const mechanicField = row.querySelector('[data-field="mechanic_id"]');
+            const isMechanic = roleSelect.value === 'mechanic';
+            mechanicField.disabled = !isMechanic;
+            if (!isMechanic) {
+                mechanicField.value = '';
+            }
+        }
+
         async function loadUsers() {
+            setTableError();
             const res = await fetch('/api/admin/users');
             const data = await res.json();
-            if (!data.success) {
-                message(tableMessage, data.error || 'Failed to load users', true);
+            if (!res.ok || !data.success) {
+                console.error('Failed to load users', data);
+                setTableError(data.error || 'Failed to load users. Please try again.');
                 return;
             }
 
@@ -108,10 +263,10 @@
             usersBody.innerHTML = data.users.map(user => `
                 <tr data-user-id="${user.id}">
                     <td>${user.id}</td>
-                    <td><input data-field="name" value="${user.name}" /></td>
-                    <td><input data-field="email" value="${user.email}" /></td>
+                    <td>${user.name}</td>
+                    <td>${user.email}</td>
                     <td>
-                        <select data-field="role">
+                        <select data-field="role" onchange="updateRowMechanicState(this.closest('tr'))">
                             <option value="admin" ${user.role==='admin'?'selected':''}>Admin</option>
                             <option value="frontdesk" ${user.role==='frontdesk'?'selected':''}>Front Desk</option>
                             <option value="mechanic" ${user.role==='mechanic'?'selected':''}>Mechanic</option>
@@ -133,16 +288,24 @@
                     </td>
                 </tr>
             `).join('');
+
+            document.querySelectorAll('#usersBody tr').forEach(updateRowMechanicState);
         }
 
         async function saveUser(userId) {
             const row = document.querySelector(`tr[data-user-id='${userId}']`);
+            const role = row.querySelector('[data-field="role"]').value;
+            const mechanicId = row.querySelector('[data-field="mechanic_id"]').value;
+
+            if (role === 'mechanic' && !mechanicId) {
+                message(tableMessage, 'Mechanic mapping is required for mechanic role', true);
+                return;
+            }
+
             const payload = {
-                name: row.querySelector('[data-field="name"]').value,
-                email: row.querySelector('[data-field="email"]').value,
-                role: row.querySelector('[data-field="role"]').value,
+                role,
                 active: row.querySelector('[data-field="active"]').value,
-                mechanic_id: row.querySelector('[data-field="mechanic_id"]').value,
+                mechanic_id: mechanicId,
             };
 
             const res = await fetch(`/api/admin/users/${userId}`, {
@@ -161,13 +324,21 @@
 
         document.getElementById('createForm').addEventListener('submit', async (event) => {
             event.preventDefault();
+
+            const role = document.getElementById('role').value;
+            const mechanicId = mechanicSelect.value;
+            if (role === 'mechanic' && !mechanicId) {
+                message(createMessage, 'Mechanic mapping is required for mechanic role', true);
+                return;
+            }
+
             const payload = {
                 name: document.getElementById('name').value,
                 email: document.getElementById('email').value,
                 password: document.getElementById('password').value,
-                role: document.getElementById('role').value,
+                role,
                 active: document.getElementById('active').value,
-                mechanic_id: document.getElementById('mechanicId').value,
+                mechanic_id: mechanicId,
             };
 
             const res = await fetch('/api/admin/users', {
@@ -182,10 +353,17 @@
             }
             message(createMessage, 'User created successfully');
             event.target.reset();
+            toggleCreateMechanicRequirement();
             await loadUsers();
         });
 
-        loadUsers().catch(() => message(tableMessage, 'Error loading user data', true));
+        createRoleSelect.addEventListener('change', toggleCreateMechanicRequirement);
+
+        toggleCreateMechanicRequirement();
+        loadUsers().catch((error) => {
+            console.error('Error loading user data', error);
+            setTableError('Error loading user data. Please refresh and try again.');
+        });
     </script>
 </body>
 </html>

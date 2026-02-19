@@ -74,7 +74,8 @@ class AuthRoleTests(unittest.TestCase):
             follow_redirects=False,
         )
         forbidden = self.client.get('/admin/settings', follow_redirects=False)
-        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(forbidden.status_code, 302)
+        self.assertTrue(forbidden.headers['Location'].endswith('/admin/dashboard'))
 
         logout = self.client.get('/logout', follow_redirects=False)
         self.assertEqual(logout.status_code, 302)
@@ -163,6 +164,74 @@ class AuthRoleTests(unittest.TestCase):
         )
         self.assertEqual(update_response.status_code, 200)
         self.assertTrue(update_response.get_json()['success'])
+
+
+    def test_user_management_link_visible_for_admin_only(self):
+        admin_client = scheduler_app.app.test_client()
+        admin_client.post(
+            '/auth/login',
+            data={'email': 'admin@autoshop.local', 'password': 'Admin123!', 'role': 'admin'},
+            follow_redirects=False,
+        )
+        admin_dashboard = admin_client.get('/admin/dashboard')
+        self.assertEqual(admin_dashboard.status_code, 200)
+        self.assertIn('href="/user-management"', admin_dashboard.get_data(as_text=True))
+
+        frontdesk_client = scheduler_app.app.test_client()
+        frontdesk_client.post(
+            '/auth/login',
+            data={'email': 'frontdesk@autoshop.local', 'password': 'Frontdesk123!', 'role': 'frontdesk'},
+            follow_redirects=False,
+        )
+        frontdesk_dashboard = frontdesk_client.get('/admin/dashboard')
+        self.assertEqual(frontdesk_dashboard.status_code, 200)
+        self.assertNotIn('href="/user-management"', frontdesk_dashboard.get_data(as_text=True))
+
+    def test_user_management_page_access_control(self):
+        unauth_response = self.client.get('/user-management', follow_redirects=False)
+        self.assertEqual(unauth_response.status_code, 302)
+        self.assertTrue(unauth_response.headers['Location'].endswith('/login'))
+
+        frontdesk_client = scheduler_app.app.test_client()
+        frontdesk_client.post(
+            '/auth/login',
+            data={'email': 'frontdesk@autoshop.local', 'password': 'Frontdesk123!', 'role': 'frontdesk'},
+            follow_redirects=False,
+        )
+        frontdesk_response = frontdesk_client.get('/user-management', follow_redirects=False)
+        self.assertEqual(frontdesk_response.status_code, 302)
+        self.assertTrue(frontdesk_response.headers['Location'].endswith('/admin/dashboard'))
+
+        mechanic_client = scheduler_app.app.test_client()
+        mechanic_client.post(
+            '/auth/login',
+            data={'email': 'mechanic@autoshop.local', 'password': 'Mechanic123!', 'role': 'mechanic'},
+            follow_redirects=False,
+        )
+        mechanic_response = mechanic_client.get('/user-management', follow_redirects=False)
+        self.assertEqual(mechanic_response.status_code, 302)
+        self.assertTrue(mechanic_response.headers['Location'].endswith('/mechanic/dashboard'))
+
+    def test_create_mechanic_requires_mapping(self):
+        self.client.post(
+            '/auth/login',
+            data={'email': 'admin@autoshop.local', 'password': 'Admin123!', 'role': 'admin'},
+            follow_redirects=False,
+        )
+
+        response = self.client.post(
+            '/api/admin/users',
+            json={
+                'name': 'Unmapped Mechanic',
+                'email': 'unmapped.mechanic@autoshop.local',
+                'password': 'Created123!',
+                'role': 'mechanic',
+                'active': 1,
+                'mechanic_id': '',
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'Mechanic mapping is required for mechanic role')
 
     def test_frontdesk_blocked_from_admin_user_management(self):
         self.client.post(
