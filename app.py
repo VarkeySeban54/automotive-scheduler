@@ -183,12 +183,42 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            phone_number TEXT NOT NULL,
+            normalized_phone TEXT,
+            email TEXT,
+            normalized_email TEXT,
+            address TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute("PRAGMA table_info(customers)")
+    customer_columns = {row['name'] for row in cursor.fetchall()}
+    if 'normalized_phone' not in customer_columns:
+        cursor.execute("ALTER TABLE customers ADD COLUMN normalized_phone TEXT")
+    if 'normalized_email' not in customer_columns:
+        cursor.execute("ALTER TABLE customers ADD COLUMN normalized_email TEXT")
+    if 'address' not in customer_columns:
+        cursor.execute("ALTER TABLE customers ADD COLUMN address TEXT")
+    if 'notes' not in customer_columns:
+        cursor.execute("ALTER TABLE customers ADD COLUMN notes TEXT")
+    if 'updated_at' not in customer_columns:
+        cursor.execute("ALTER TABLE customers ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
     # Create bookings table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS bookings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_id INTEGER,
             customer_name TEXT NOT NULL,
             phone TEXT NOT NULL,
+            email TEXT,
             vehicle TEXT NOT NULL,
             service_type TEXT NOT NULL,
             mechanic TEXT NOT NULL,
@@ -198,7 +228,8 @@ def init_db():
             selected_slots TEXT,
             booking_date TEXT NOT NULL,
             status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (customer_id) REFERENCES customers(id)
         )
     ''')
 
@@ -208,6 +239,26 @@ def init_db():
         cursor.execute("ALTER TABLE bookings ADD COLUMN duration_minutes INTEGER DEFAULT 30")
     if 'selected_slots' not in booking_columns:
         cursor.execute("ALTER TABLE bookings ADD COLUMN selected_slots TEXT")
+    if 'customer_id' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN customer_id INTEGER")
+    if 'email' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN email TEXT")
+
+    cursor.execute('SELECT id, phone_number, email FROM customers')
+    for row in cursor.fetchall():
+        normalized_phone = _normalize_phone(row['phone_number'])
+        normalized_email = _sanitize_email(row['email']) if row['email'] else None
+        cursor.execute(
+            'UPDATE customers SET normalized_phone = ?, normalized_email = ? WHERE id = ?',
+            (normalized_phone, normalized_email or None, row['id'])
+        )
+
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_normalized_phone ON customers(normalized_phone)')
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_normalized_email
+        ON customers(normalized_email)
+        WHERE normalized_email IS NOT NULL
+    ''')
     
     # Create mechanics table
     cursor.execute('''
@@ -309,6 +360,10 @@ def _sanitize_email(email):
     return (email or '').strip().lower()
 
 
+def _normalize_phone(phone):
+    return ''.join(ch for ch in (phone or '') if ch.isdigit())
+
+
 def _normalize_active(value):
     if isinstance(value, bool):
         return 1 if value else 0
@@ -321,6 +376,63 @@ def _normalize_active(value):
         if lowered in {'0', 'false', 'no', 'inactive'}:
             return 0
     return None
+
+
+def _find_customer_by_phone(cursor, phone):
+    normalized_phone = _normalize_phone(phone)
+    if not normalized_phone:
+        return None
+    cursor.execute('SELECT * FROM customers WHERE normalized_phone = ?', (normalized_phone,))
+    return cursor.fetchone()
+
+
+def _upsert_customer_for_booking(cursor, data):
+    full_name = (data.get('customer_name') or '').strip()
+    phone = (data.get('phone') or '').strip()
+    email = _sanitize_email(data.get('email')) or None
+    address = (data.get('address') or '').strip() or None
+    notes = (data.get('customer_notes') or '').strip() or None
+
+    normalized_phone = _normalize_phone(phone)
+    if not normalized_phone:
+        raise ValueError('Phone number is required')
+
+    existing_customer = _find_customer_by_phone(cursor, phone)
+    if existing_customer:
+        update_fields = []
+        update_params = []
+        if full_name and existing_customer['full_name'] != full_name:
+            update_fields.append('full_name = ?')
+            update_params.append(full_name)
+        if email and existing_customer['normalized_email'] != email:
+            update_fields.append('email = ?')
+            update_params.append(email)
+            update_fields.append('normalized_email = ?')
+            update_params.append(email)
+        if address is not None and existing_customer['address'] != address:
+            update_fields.append('address = ?')
+            update_params.append(address)
+        if notes is not None and existing_customer['notes'] != notes:
+            update_fields.append('notes = ?')
+            update_params.append(notes)
+
+        if update_fields:
+            update_fields.append('updated_at = CURRENT_TIMESTAMP')
+            update_params.append(existing_customer['id'])
+            cursor.execute(
+                f"UPDATE customers SET {', '.join(update_fields)} WHERE id = ?",
+                update_params,
+            )
+        return existing_customer['id']
+
+    cursor.execute(
+        '''
+        INSERT INTO customers (full_name, phone_number, normalized_phone, email, normalized_email, address, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (full_name, phone, normalized_phone, email, email, address, notes),
+    )
+    return cursor.lastrowid
 
 
 
@@ -662,7 +774,13 @@ def get_bookings():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    query = 'SELECT * FROM bookings WHERE 1=1'
+    query = '''
+        SELECT b.*, c.full_name as customer_full_name, c.phone_number as customer_phone_number,
+               c.email as customer_email
+        FROM bookings b
+        LEFT JOIN customers c ON c.id = b.customer_id
+        WHERE 1=1
+    '''
     params = []
     
     if date:
@@ -677,7 +795,7 @@ def get_bookings():
         query += ' AND status = ?'
         params.append(status)
     
-    query += ' ORDER BY time_slot ASC'
+    query += ' ORDER BY b.time_slot ASC'
     
     cursor.execute(query, params)
     bookings = [dict(row) for row in cursor.fetchall()]
@@ -688,6 +806,78 @@ def get_bookings():
         'bookings': bookings,
         'count': len(bookings)
     })
+
+
+@app.route('/api/customers/search', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
+def search_customers():
+    query = (request.args.get('q') or '').strip()
+    if len(query) < 2:
+        return jsonify({'success': True, 'customers': []})
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    normalized_phone = _normalize_phone(query)
+    like_term = f"%{query.lower()}%"
+
+    if normalized_phone:
+        cursor.execute(
+            '''
+            SELECT id, full_name, phone_number, email, address, notes, created_at, updated_at
+            FROM customers
+            WHERE normalized_phone LIKE ?
+               OR LOWER(full_name) LIKE ?
+               OR LOWER(COALESCE(email, '')) LIKE ?
+            ORDER BY updated_at DESC
+            LIMIT 12
+            ''',
+            (f"%{normalized_phone}%", like_term, like_term),
+        )
+    else:
+        cursor.execute(
+            '''
+            SELECT id, full_name, phone_number, email, address, notes, created_at, updated_at
+            FROM customers
+            WHERE LOWER(full_name) LIKE ?
+               OR LOWER(COALESCE(email, '')) LIKE ?
+            ORDER BY updated_at DESC
+            LIMIT 12
+            ''',
+            (like_term, like_term),
+        )
+
+    customers = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify({'success': True, 'customers': customers})
+
+
+@app.route('/api/customers/<int:customer_id>/history', methods=['GET'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK, ROLE_MECHANIC)
+def customer_service_history(customer_id):
+    limit = min(max(int(request.args.get('limit', 8)), 1), 20)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM customers WHERE id = ?', (customer_id,))
+    customer = cursor.fetchone()
+    if not customer:
+        conn.close()
+        return jsonify({'success': False, 'error': 'Customer not found'}), 404
+
+    cursor.execute(
+        '''
+        SELECT id, booking_date, time_slot, vehicle, service_type, description, status, mechanic
+        FROM bookings
+        WHERE customer_id = ?
+        ORDER BY booking_date DESC, created_at DESC
+        LIMIT ?
+        ''',
+        (customer_id, limit),
+    )
+    history = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+
+    return jsonify({'success': True, 'customer': dict(customer), 'history': history})
 
 
 @app.route('/api/bookings', methods=['POST'])
@@ -728,6 +918,15 @@ def create_booking():
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    try:
+        customer_id = _upsert_customer_for_booking(cursor, data)
+    except ValueError as exc:
+        conn.close()
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({'success': False, 'error': 'Customer email already exists for another profile'}), 409
+
     cursor.execute('''
         SELECT time_slot, COALESCE(duration_minutes, ?) as duration_minutes FROM bookings
         WHERE booking_date = ? AND mechanic = ? AND status NOT IN (?, ?)
@@ -755,12 +954,14 @@ def create_booking():
 
     # Insert the booking
     cursor.execute('''
-        INSERT INTO bookings (customer_name, phone, vehicle, service_type,
+        INSERT INTO bookings (customer_id, customer_name, phone, email, vehicle, service_type,
                              mechanic, description, time_slot, duration_minutes, selected_slots, booking_date, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
+        customer_id,
         data['customer_name'],
         data['phone'],
+        _sanitize_email(data.get('email')) or None,
         data['vehicle'],
         data['service_type'],
         data['mechanic'],
@@ -1086,9 +1287,11 @@ def get_dashboard_data():
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT * FROM bookings
-        WHERE booking_date = ?
-        ORDER BY time_slot ASC
+        SELECT b.*, c.full_name as customer_full_name, c.email as customer_email
+        FROM bookings b
+        LEFT JOIN customers c ON c.id = b.customer_id
+        WHERE b.booking_date = ?
+        ORDER BY b.time_slot ASC
     ''', (date,))
     bookings = [dict(row) for row in cursor.fetchall()]
 
