@@ -8,17 +8,34 @@
         :root {
             --brand: #f5cc1f;
             --text: #0f172a;
+            --ok: #0f766e;
+            --warn: #92400e;
+            --muted: #64748b;
         }
         body { font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f8fafc; color: var(--text); }
         .page-header { background: #111827; color: #f8fafc; padding: 16px 22px; display: flex; justify-content: space-between; align-items: center; }
         .page-header h1 { margin: 0; font-size: 1.1rem; }
         .header-right { display: flex; align-items: center; gap: 12px; font-weight: 600; }
         .logout-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--brand); color: #111827; border: 1px solid #111827; border-radius: 999px; padding: 8px 14px; text-decoration: none; font-weight: 700; }
-        .shell { min-height: calc(100vh - 64px); display: grid; place-items: center; padding: 20px; }
-        .card { width: min(700px, 100%); background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 26px; box-shadow: 0 10px 25px rgba(15,23,42,0.08); }
+        .shell { min-height: calc(100vh - 64px); padding: 20px; }
+        .card { width: min(1150px, 100%); margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 26px; box-shadow: 0 10px 25px rgba(15,23,42,0.08); }
         h2 { margin-top: 0; }
-        .muted { color: #64748b; }
-        a.manage { display: inline-block; margin-top: 16px; color: #0f172a; font-weight: 700; }
+        .muted { color: var(--muted); }
+        .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .toolbar input, .toolbar select { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; font: inherit; }
+        .toolbar button { border: 1px solid #111827; border-radius: 8px; background: #111827; color: #fff; padding: 8px 12px; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+        th, td { border-bottom: 1px solid #e2e8f0; text-align: left; padding: 10px 8px; vertical-align: top; }
+        th { color: #334155; font-size: 0.8rem; letter-spacing: .02em; text-transform: uppercase; }
+        .status { display: inline-block; border-radius: 999px; padding: 4px 8px; font-size: 0.78rem; font-weight: 700; text-transform: capitalize; }
+        .status.pending { background: #fef3c7; color: var(--warn); }
+        .status.in_progress { background: #dbeafe; color: #1d4ed8; }
+        .status.completed { background: #dcfce7; color: var(--ok); }
+        .status.cancelled { background: #fee2e2; color: #b91c1c; }
+        .actions button { border: 1px solid #cbd5e1; background: #fff; border-radius: 999px; padding: 5px 9px; margin-right: 6px; cursor: pointer; }
+        .actions button:disabled { opacity: .45; cursor: not-allowed; }
+        .empty-state { margin-top: 12px; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 16px; color: var(--muted); }
+        .feedback { margin-top: 10px; font-size: 0.9rem; }
     </style>
 </head>
 <body>
@@ -34,8 +51,139 @@
             <h2>{{ title }}</h2>
             <p>Welcome, <strong>{{ user_name }}</strong>.</p>
             <p class="muted">Signed in as <strong>{{ role_label }}</strong>. Access scope: {{ allowed_area }}.</p>
-            {% if current_role == 'admin' %}<a class="manage" href="/admin/users">Manage Users</a>{% endif %}
+
+            <div class="toolbar">
+                <div>
+                    <label for="job-date">Date:</label>
+                    <input id="job-date" type="date" />
+                    <button id="refresh-btn" type="button">Refresh</button>
+                </div>
+                <div>
+                    <label for="status-filter">Status:</label>
+                    <select id="status-filter">
+                        <option value="">Pending + In Progress</option>
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="jobs-container"></div>
+            <div id="feedback" class="feedback muted"></div>
         </section>
     </main>
+
+    <script>
+        const dateInput = document.getElementById('job-date');
+        const statusFilter = document.getElementById('status-filter');
+        const jobsContainer = document.getElementById('jobs-container');
+        const feedback = document.getElementById('feedback');
+
+        function todayValue() {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value ?? '';
+            return div.innerHTML;
+        }
+
+        function statusActions(job) {
+            if (job.status === 'pending') {
+                return `<button data-id="${job.id}" data-next="in_progress">Start</button>`;
+            }
+            if (job.status === 'in_progress') {
+                return `<button data-id="${job.id}" data-next="completed">Complete</button>`;
+            }
+            return '<button disabled>Done</button>';
+        }
+
+        function renderJobs(jobs) {
+            if (!jobs.length) {
+                jobsContainer.innerHTML = '<div class="empty-state">No assigned jobs for today.</div>';
+                return;
+            }
+
+            const rows = jobs.map(job => `
+                <tr>
+                    <td>${escapeHtml(job.time_slot)}</td>
+                    <td>${escapeHtml(job.customer_name)}</td>
+                    <td>${escapeHtml(job.vehicle)}</td>
+                    <td>${escapeHtml(job.service_type)}</td>
+                    <td>${escapeHtml(job.mechanic_name || job.mechanic)}</td>
+                    <td><span class="status ${escapeHtml(job.status)}">${escapeHtml(job.status).replace('_', ' ')}</span></td>
+                    <td>${escapeHtml(job.description || '-')}</td>
+                    <td class="actions">${statusActions(job)}</td>
+                </tr>
+            `).join('');
+
+            jobsContainer.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time Slot</th>
+                            <th>Customer</th>
+                            <th>Vehicle</th>
+                            <th>Service</th>
+                            <th>Assigned Mechanic</th>
+                            <th>Status</th>
+                            <th>Issue Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+
+            jobsContainer.querySelectorAll('.actions button[data-id]').forEach(button => {
+                button.addEventListener('click', async () => {
+                    feedback.textContent = 'Updating job status...';
+                    const response = await fetch(`/api/mechanic/jobs/${button.dataset.id}/status`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: button.dataset.next })
+                    });
+                    const payload = await response.json();
+                    if (!response.ok) {
+                        feedback.textContent = payload.error || 'Unable to update status.';
+                        return;
+                    }
+                    feedback.textContent = 'Job status updated.';
+                    await loadJobs();
+                });
+            });
+        }
+
+        async function loadJobs() {
+            const query = new URLSearchParams({ date: dateInput.value || todayValue() });
+            if (statusFilter.value) {
+                query.set('status', statusFilter.value);
+            }
+
+            feedback.textContent = 'Loading jobs...';
+            const response = await fetch(`/api/mechanic/jobs?${query.toString()}`);
+            const payload = await response.json();
+
+            if (!response.ok || !payload.success) {
+                jobsContainer.innerHTML = '<div class="empty-state">Unable to load jobs.</div>';
+                feedback.textContent = payload.error || 'Request failed.';
+                return;
+            }
+
+            renderJobs(payload.jobs || []);
+            feedback.textContent = `Showing ${payload.jobs.length} assigned job(s) for ${payload.date}.`;
+        }
+
+        dateInput.value = todayValue();
+        document.getElementById('refresh-btn').addEventListener('click', loadJobs);
+        statusFilter.addEventListener('change', loadJobs);
+        loadJobs();
+    </script>
 </body>
 </html>
