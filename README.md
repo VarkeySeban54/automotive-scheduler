@@ -30,6 +30,19 @@ The server will start on `http://localhost:5000`
 Open `http://localhost:5000/login` to sign in to the web dashboard.
 
 
+### Important: Open through Flask (not as local file)
+
+Do **not** double-click `index.html` or `admin_scheduling_panel.html` from your file explorer. They call relative API paths such as `/api/dashboard`, which only work when served by Flask.
+
+Use this flow instead:
+
+1. `python app.py`
+2. Open `http://localhost:5000/login`
+3. Sign in, then Flask redirects to `/admin/dashboard` or `/mechanic/dashboard`
+
+`admin_scheduling_panel.html` is kept as a **legacy entry file** and now points users to the Flask route.
+
+
 ### 3.1 Default Login Accounts
 
 The app seeds these users on first run:
