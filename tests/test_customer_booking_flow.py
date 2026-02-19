@@ -26,6 +26,7 @@ class CustomerBookingFlowTests(unittest.TestCase):
 
     def test_booking_creates_customer_and_links_customer_id(self):
         payload = {
+            'customer_mode': 'new',
             'customer_name': 'Jane Doe',
             'phone': '(555) 111-2222',
             'email': 'jane@example.com',
@@ -56,6 +57,7 @@ class CustomerBookingFlowTests(unittest.TestCase):
 
     def test_phone_match_reuses_existing_customer(self):
         first_payload = {
+            'customer_mode': 'new',
             'customer_name': 'Alex Rider',
             'phone': '555-333-4444',
             'vehicle': 'Honda Civic',
@@ -65,6 +67,7 @@ class CustomerBookingFlowTests(unittest.TestCase):
             'booking_date': '2026-02-21'
         }
         second_payload = {
+            'customer_mode': 'existing',
             'customer_name': 'Alex Rider Updated',
             'phone': '(555)3334444',
             'vehicle': 'Honda Accord',
@@ -74,7 +77,16 @@ class CustomerBookingFlowTests(unittest.TestCase):
             'booking_date': '2026-02-21'
         }
 
-        self.assertEqual(self.client.post('/api/bookings', json=first_payload).status_code, 201)
+        first_response = self.client.post('/api/bookings', json=first_payload)
+        self.assertEqual(first_response.status_code, 201)
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM customers WHERE normalized_phone = ?', ('5553334444',))
+        existing_customer = cursor.fetchone()
+        conn.close()
+
+        second_payload['customer_id'] = existing_customer['id']
         self.assertEqual(self.client.post('/api/bookings', json=second_payload).status_code, 201)
 
         conn = scheduler_app.get_db_connection()
@@ -90,6 +102,7 @@ class CustomerBookingFlowTests(unittest.TestCase):
 
     def test_customer_search_and_history_endpoints(self):
         payload = {
+            'customer_mode': 'new',
             'customer_name': 'History User',
             'phone': '555-987-0000',
             'email': 'history@example.com',
@@ -113,6 +126,51 @@ class CustomerBookingFlowTests(unittest.TestCase):
         history_payload = history_response.get_json()
         self.assertEqual(len(history_payload['history']), 1)
         self.assertEqual(history_payload['history'][0]['service_type'], 'engine-diagnostic')
+
+    def test_new_customer_mode_blocks_duplicate_phone(self):
+        payload = {
+            'customer_mode': 'new',
+            'customer_name': 'First User',
+            'phone': '555-777-8888',
+            'vehicle': 'Toyota Camry',
+            'service_type': 'inspection',
+            'mechanic': 'ajith-mathew',
+            'time_slot': '8:00 AM',
+            'booking_date': '2026-02-23'
+        }
+        self.assertEqual(self.client.post('/api/bookings', json=payload).status_code, 201)
+
+        duplicate_payload = {
+            'customer_mode': 'new',
+            'customer_name': 'Second User',
+            'phone': '(555)777-8888',
+            'vehicle': 'Ford Escape',
+            'service_type': 'oil-change',
+            'mechanic': 'alvin-antony',
+            'time_slot': '9:00 AM',
+            'booking_date': '2026-02-23'
+        }
+        response = self.client.post('/api/bookings', json=duplicate_payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()['error'],
+            'Customer already exists. Use Existing Customer option.'
+        )
+
+    def test_existing_customer_mode_requires_customer_id(self):
+        payload = {
+            'customer_mode': 'existing',
+            'customer_name': 'Missing Link',
+            'phone': '555-121-9999',
+            'vehicle': 'Mazda CX-5',
+            'service_type': 'inspection',
+            'mechanic': 'ajith-mathew',
+            'time_slot': '11:00 AM',
+            'booking_date': '2026-02-24'
+        }
+        response = self.client.post('/api/bookings', json=payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Selected customer does not exist', response.get_json()['error'])
 
 
 if __name__ == '__main__':
