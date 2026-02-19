@@ -162,6 +162,30 @@
         }
 
 
+
+        .customer-mode-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .customer-mode-btn {
+            border: 1px solid var(--border);
+            background: var(--surface-muted);
+            color: var(--text-soft);
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s ease;
+        }
+
+        .customer-mode-btn.active {
+            background: #111827;
+            color: var(--brand);
+            border-color: #111827;
+        }
+
         .customer-lookup-results {
             margin-top: 8px;
             border: 1px solid var(--border);
@@ -675,6 +699,14 @@
             <div id="formMessage"></div>
             <form id="bookingForm">
                 <div class="form-group">
+                    <label>Customer Type</label>
+                    <div class="customer-mode-buttons">
+                        <button type="button" id="existingCustomerBtn" class="customer-mode-btn">Existing Customer</button>
+                        <button type="button" id="newCustomerBtn" class="customer-mode-btn active">New Customer</button>
+                    </div>
+                </div>
+
+                <div class="form-group" id="customerLookupSection" style="display:none;">
                     <label>Customer Lookup</label>
                     <input type="text" id="customerSearch" placeholder="Search by phone, name, or email">
                     <div id="customerLookupResults" class="customer-lookup-results"></div>
@@ -682,7 +714,7 @@
 
                 <div id="serviceHistory" class="service-history">
                     <h4>Recent Service History</h4>
-                    <div id="serviceHistoryList" style="font-size:0.85rem;color:#64748b;">Select a customer to view history.</div>
+                    <div id="serviceHistoryList" style="font-size:0.85rem;color:#64748b;">No service history found for this customer.</div>
                 </div>
 
                 <div class="form-group">
@@ -826,6 +858,7 @@
         let selectedSlotElement = null;
         let currentView = 'admin';
         let selectedCustomerId = null;
+        let customerMode = 'new';
         let mechanicDirectory = {};
         const vehicleCatalog = {
             'Toyota': ['Camry', 'Corolla', 'RAV4', 'Highlander', 'Tacoma', 'Prius'],
@@ -863,7 +896,9 @@
         // Initialize the app
         async function init() {
             initializeVehicleDropdowns();
+            initializeCustomerMode();
             initializeCustomerLookup();
+            applyCustomerMode();
             await loadMechanics();
             updateDateDisplay();
             await loadDashboardData();
@@ -921,6 +956,47 @@
         }
         
 
+        function initializeCustomerMode() {
+            document.getElementById('existingCustomerBtn').addEventListener('click', () => {
+                customerMode = 'existing';
+                applyCustomerMode();
+            });
+
+            document.getElementById('newCustomerBtn').addEventListener('click', () => {
+                customerMode = 'new';
+                applyCustomerMode();
+            });
+        }
+
+        function clearSelectedCustomer() {
+            selectedCustomerId = null;
+            document.getElementById('customerLookupResults').style.display = 'none';
+            document.getElementById('customerLookupResults').innerHTML = '';
+        }
+
+        function applyCustomerMode() {
+            const searchInput = document.getElementById('customerSearch');
+            const history = document.getElementById('serviceHistoryList');
+            const lookupSection = document.getElementById('customerLookupSection');
+            const isExisting = customerMode === 'existing';
+
+            document.getElementById('existingCustomerBtn').classList.toggle('active', isExisting);
+            document.getElementById('newCustomerBtn').classList.toggle('active', !isExisting);
+            lookupSection.style.display = isExisting ? 'block' : 'none';
+            searchInput.value = '';
+
+            if (isExisting) {
+                document.getElementById('customerName').value = '';
+                document.getElementById('customerPhone').value = '';
+                document.getElementById('customerEmail').value = '';
+                clearSelectedCustomer();
+                history.textContent = 'No service history found for this customer.';
+            } else {
+                clearSelectedCustomer();
+                history.textContent = 'No service history found for this customer.';
+            }
+        }
+
         function initializeCustomerLookup() {
             const searchInput = document.getElementById('customerSearch');
             let debounceTimer;
@@ -951,7 +1027,7 @@
 
         async function searchCustomers(query) {
             const results = document.getElementById('customerLookupResults');
-            if (query.length < 2) {
+            if (customerMode !== 'existing' || query.length < 2) {
                 results.style.display = 'none';
                 results.innerHTML = '';
                 return;
@@ -962,7 +1038,7 @@
 
             if (!data.success || data.customers.length === 0) {
                 results.style.display = 'block';
-                results.innerHTML = '<div class="customer-lookup-item">No customer found</div>';
+                results.innerHTML = '<div class="customer-lookup-item">No existing customer found</div>';
                 return;
             }
 
@@ -980,6 +1056,7 @@
             const customer = (window.__customerLookup || []).find(item => item.id === customerId);
             if (!customer) return;
 
+            customerMode = 'existing';
             selectedCustomerId = customer.id;
             document.getElementById('customerName').value = customer.full_name || '';
             document.getElementById('customerPhone').value = customer.phone_number || '';
@@ -995,7 +1072,7 @@
             const container = document.getElementById('serviceHistoryList');
 
             if (!data.success || data.history.length === 0) {
-                container.innerHTML = 'No prior service history for this customer.';
+                container.innerHTML = 'No service history found for this customer.';
                 return;
             }
 
@@ -1141,6 +1218,7 @@
                 phone: document.getElementById('customerPhone').value,
                 email: document.getElementById('customerEmail').value,
                 customer_id: selectedCustomerId,
+                customer_mode: customerMode,
                 vehicle: `${document.getElementById('vehicleMake').value} ${document.getElementById('vehicleModel').value}`.trim(),
                 service_type: document.getElementById('serviceType').value,
                 mechanic: document.getElementById('mechanic').value,
@@ -1149,6 +1227,11 @@
                 booking_date: formatDate(currentDate)
             };
             
+            if (bookingData.customer_mode === 'existing' && !bookingData.customer_id) {
+                messageDiv.innerHTML = '<div class="error-message">Please select an existing customer from lookup</div>';
+                return;
+            }
+
             if (!bookingData.time_slot) {
                 messageDiv.innerHTML = '<div class="error-message">Please select a time slot from the calendar</div>';
                 return;
@@ -1174,7 +1257,8 @@
                     // Reset form
                     this.reset();
                     selectedCustomerId = null;
-                    document.getElementById('serviceHistoryList').textContent = 'Select a customer to view history.';
+                    customerMode = 'new';
+                    applyCustomerMode();
                     document.getElementById('selectedSlot').value = '';
                     selectedSlot = null;
                     if (selectedSlotElement) {

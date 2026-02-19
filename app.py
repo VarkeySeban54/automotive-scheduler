@@ -386,7 +386,18 @@ def _find_customer_by_phone(cursor, phone):
     return cursor.fetchone()
 
 
-def _upsert_customer_for_booking(cursor, data):
+def _find_customer_by_id(cursor, customer_id):
+    if not customer_id:
+        return None
+    cursor.execute('SELECT * FROM customers WHERE id = ?', (customer_id,))
+    return cursor.fetchone()
+
+
+def _resolve_customer_for_booking(cursor, data):
+    booking_mode = (data.get('customer_mode') or 'new').strip().lower()
+    if booking_mode not in {'existing', 'new'}:
+        raise ValueError('customer_mode must be either "existing" or "new"')
+
     full_name = (data.get('customer_name') or '').strip()
     phone = (data.get('phone') or '').strip()
     email = _sanitize_email(data.get('email')) or None
@@ -397,13 +408,25 @@ def _upsert_customer_for_booking(cursor, data):
     if not normalized_phone:
         raise ValueError('Phone number is required')
 
-    existing_customer = _find_customer_by_phone(cursor, phone)
-    if existing_customer:
+    if booking_mode == 'existing':
+        customer_id = data.get('customer_id')
+        existing_customer = _find_customer_by_id(cursor, customer_id)
+        if not existing_customer:
+            raise ValueError('Selected customer does not exist. Use customer lookup to choose an existing customer.')
+
         update_fields = []
         update_params = []
         if full_name and existing_customer['full_name'] != full_name:
             update_fields.append('full_name = ?')
             update_params.append(full_name)
+        if normalized_phone and existing_customer['normalized_phone'] != normalized_phone:
+            duplicate = _find_customer_by_phone(cursor, phone)
+            if duplicate and duplicate['id'] != existing_customer['id']:
+                raise ValueError('Phone number already belongs to another customer')
+            update_fields.append('phone_number = ?')
+            update_params.append(phone)
+            update_fields.append('normalized_phone = ?')
+            update_params.append(normalized_phone)
         if email and existing_customer['normalized_email'] != email:
             update_fields.append('email = ?')
             update_params.append(email)
@@ -425,6 +448,11 @@ def _upsert_customer_for_booking(cursor, data):
             )
         return existing_customer['id']
 
+    # New customer flow.
+    existing_customer = _find_customer_by_phone(cursor, phone)
+    if existing_customer:
+        raise ValueError('Customer already exists. Use Existing Customer option.')
+
     cursor.execute(
         '''
         INSERT INTO customers (full_name, phone_number, normalized_phone, email, normalized_email, address, notes)
@@ -433,6 +461,9 @@ def _upsert_customer_for_booking(cursor, data):
         (full_name, phone, normalized_phone, email, email, address, notes),
     )
     return cursor.lastrowid
+
+
+
 
 
 
@@ -919,7 +950,7 @@ def create_booking():
     cursor = conn.cursor()
 
     try:
-        customer_id = _upsert_customer_for_booking(cursor, data)
+        customer_id = _resolve_customer_for_booking(cursor, data)
     except ValueError as exc:
         conn.close()
         return jsonify({'success': False, 'error': str(exc)}), 400
