@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 import app as scheduler_app
 
@@ -23,6 +24,23 @@ class CustomerBookingFlowTests(unittest.TestCase):
     def tearDown(self):
         if os.path.exists(self._db_file.name):
             os.remove(self._db_file.name)
+
+    def _create_booking(self, phone='416-555-1212'):
+        payload = {
+            'customer_mode': 'new',
+            'customer_name': 'SMS User',
+            'phone': phone,
+            'email': 'smsuser@example.com',
+            'vehicle': 'Toyota Camry',
+            'service_type': 'oil-change',
+            'mechanic': 'ajith-mathew',
+            'description': 'SMS test booking',
+            'time_slot': '8:00 AM',
+            'booking_date': '2026-02-20'
+        }
+        response = self.client.post('/api/bookings', json=payload)
+        self.assertEqual(response.status_code, 201)
+        return response.get_json()['booking_id']
 
     def test_booking_creates_customer_and_links_customer_id(self):
         payload = {
@@ -260,6 +278,146 @@ class CustomerBookingFlowTests(unittest.TestCase):
         self.assertEqual(booking['status'], 'confirmed')
         self.assertEqual(updated_reminder['status'], 'responded')
         self.assertEqual(updated_reminder['response_value'], 'confirmed')
+
+    def test_send_sms_success_sets_sent_fields(self):
+        booking_id = self._create_booking()
+
+        fake_service = mock.Mock()
+        fake_service.provider_name = 'twilio'
+        fake_service.send_sms.return_value = {
+            'provider_message_id': 'SM123456789',
+            'raw_status': 'queued',
+        }
+
+        with mock.patch.object(scheduler_app, 'get_sms_service', return_value=fake_service):
+            response = self.client.post(f'/api/bookings/{booking_id}/send-confirmation-sms', json={})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['status'], 'SENT')
+        self.assertEqual(payload['messageSid'], 'SM123456789')
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT confirmation_sms_status, confirmation_sms_sent_at, confirmation_sms_provider_message_id,
+                   confirmation_sms_last_error, confirmation_sms_attempt_count
+            FROM bookings
+            WHERE id = ?
+            ''',
+            (booking_id,),
+        )
+        booking = cursor.fetchone()
+        conn.close()
+
+        self.assertEqual(booking['confirmation_sms_status'], 'SENT')
+        self.assertTrue(booking['confirmation_sms_sent_at'])
+        self.assertEqual(booking['confirmation_sms_provider_message_id'], 'SM123456789')
+        self.assertIsNone(booking['confirmation_sms_last_error'])
+        self.assertEqual(booking['confirmation_sms_attempt_count'], 1)
+
+    def test_send_sms_provider_failure_sets_failed_fields(self):
+        booking_id = self._create_booking()
+
+        with mock.patch.object(
+            scheduler_app,
+            'get_sms_service',
+            side_effect=scheduler_app.SmsProviderError('PROVIDER_ERROR', 'Unable to send SMS through provider.'),
+        ):
+            response = self.client.post(f'/api/bookings/{booking_id}/send-confirmation-sms', json={})
+
+        self.assertEqual(response.status_code, 502)
+        payload = response.get_json()
+        self.assertFalse(payload['success'])
+        self.assertEqual(payload['errorCode'], 'PROVIDER_ERROR')
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT confirmation_sms_status, confirmation_sms_last_error FROM bookings WHERE id = ?',
+            (booking_id,),
+        )
+        booking = cursor.fetchone()
+        conn.close()
+
+        self.assertEqual(booking['confirmation_sms_status'], 'FAILED')
+        self.assertEqual(booking['confirmation_sms_last_error'], 'Unable to send SMS through provider.')
+
+    def test_send_sms_invalid_phone_returns_400(self):
+        booking_id = self._create_booking(phone='12345')
+
+        response = self.client.post(f'/api/bookings/{booking_id}/send-confirmation-sms', json={})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['errorCode'], 'INVALID_PHONE')
+
+    def test_send_sms_booking_not_found_returns_404(self):
+        response = self.client.post('/api/bookings/99999/send-confirmation-sms', json={})
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.get_json()['errorCode'], 'BOOKING_NOT_FOUND')
+
+    def test_send_sms_mechanic_forbidden_returns_403(self):
+        booking_id = self._create_booking()
+
+        mechanic_client = scheduler_app.app.test_client()
+        mechanic_client.post(
+            '/auth/login',
+            data={'email': 'mechanic@autoshop.local', 'password': 'Mechanic123!', 'role': 'mechanic'},
+            follow_redirects=False,
+        )
+        response = mechanic_client.post(f'/api/bookings/{booking_id}/send-confirmation-sms', json={})
+        self.assertEqual(response.status_code, 403)
+
+    def test_send_sms_already_sent_without_force_returns_409(self):
+        booking_id = self._create_booking()
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE bookings SET confirmation_sms_status = 'SENT', confirmation_sms_sent_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (booking_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        response = self.client.post(f'/api/bookings/{booking_id}/send-confirmation-sms', json={})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()['errorCode'], 'ALREADY_SENT')
+
+    def test_send_sms_already_sending_returns_409(self):
+        booking_id = self._create_booking()
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE bookings SET confirmation_sms_status = 'SENDING' WHERE id = ?", (booking_id,))
+        conn.commit()
+        conn.close()
+
+        response = self.client.post(f'/api/bookings/{booking_id}/send-confirmation-sms', json={})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()['errorCode'], 'ALREADY_SENDING')
+
+    def test_send_sms_force_resend_allows_sent_bookings(self):
+        booking_id = self._create_booking()
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE bookings SET confirmation_sms_status = 'SENT', confirmation_sms_sent_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (booking_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        fake_service = mock.Mock()
+        fake_service.provider_name = 'twilio'
+        fake_service.send_sms.return_value = {'provider_message_id': 'SMRESEND', 'raw_status': 'queued'}
+        with mock.patch.object(scheduler_app, 'get_sms_service', return_value=fake_service):
+            response = self.client.post(
+                f'/api/bookings/{booking_id}/send-confirmation-sms',
+                json={'forceResend': True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['messageSid'], 'SMRESEND')
 
 if __name__ == '__main__':
     unittest.main()
