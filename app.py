@@ -7,7 +7,7 @@ import hmac
 import secrets
 from zoneinfo import ZoneInfo
 
-from flask import Flask, request, jsonify, redirect, render_template, session, url_for
+from flask import Flask, request, jsonify, redirect, render_template, session, url_for, g
 from flask_cors import CORS
 from datetime import datetime, timedelta
 
@@ -23,6 +23,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     SESSION_COOKIE_SECURE=os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true',
+    SESSION_TIMEOUT_MINUTES=int(os.environ.get('SESSION_TIMEOUT_MINUTES', '30')),
 )
 
 # Database setup
@@ -97,6 +98,7 @@ DEFAULT_COUNTRY = os.environ.get('DEFAULT_COUNTRY', 'CA').strip().upper()
 DEFAULT_TIMEZONE = os.environ.get('DEFAULT_TIMEZONE', 'America/Toronto').strip()
 SHOP_NAME = os.environ.get('SHOP_NAME', 'Auto Shop').strip()
 SHOP_ADDRESS = os.environ.get('SHOP_ADDRESS', 'Address unavailable').strip()
+PUBLIC_ENDPOINTS = {'login_page', 'login', 'logout', 'health_check', 'home', 'api_docs', 'static'}
 
 
 class SmsProviderError(Exception):
@@ -248,6 +250,70 @@ def roles_required(*allowed_roles):
         return wrapper
 
     return decorator
+
+
+def _current_timestamp():
+    return datetime.utcnow().timestamp()
+
+
+def _is_inactivity_timeout(last_activity_ts, current_ts=None, timeout_seconds=None):
+    if last_activity_ts is None:
+        return False
+
+    now_ts = current_ts if current_ts is not None else _current_timestamp()
+    timeout_window = timeout_seconds if timeout_seconds is not None else app.config['SESSION_TIMEOUT_MINUTES'] * 60
+    return (now_ts - float(last_activity_ts)) > timeout_window
+
+
+def _clear_session_and_cookie(response):
+    session.clear()
+    response.delete_cookie(
+        app.config.get('SESSION_COOKIE_NAME', 'session'),
+        path=app.config.get('SESSION_COOKIE_PATH', '/'),
+        domain=app.config.get('SESSION_COOKIE_DOMAIN'),
+        secure=app.config.get('SESSION_COOKIE_SECURE', False),
+        httponly=app.config.get('SESSION_COOKIE_HTTPONLY', True),
+        samesite=app.config.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+    )
+    return response
+
+
+def _session_expired_response():
+    message = 'Your session has expired due to inactivity. Please log in again.'
+    if request.path.startswith('/api/'):
+        response = jsonify({'success': False, 'error': message})
+        response.status_code = 401
+    else:
+        response = redirect(url_for('login_page', session_expired='1'))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return _clear_session_and_cookie(response)
+
+
+@app.before_request
+def enforce_session_timeout():
+    if request.endpoint in PUBLIC_ENDPOINTS:
+        return None
+
+    if not session.get('user_id'):
+        return None
+
+    if _is_inactivity_timeout(session.get('last_activity_at')):
+        return _session_expired_response()
+
+    session['last_activity_at'] = _current_timestamp()
+    g.disable_authenticated_cache = True
+    return None
+
+
+@app.after_request
+def apply_no_cache_headers(response):
+    if getattr(g, 'disable_authenticated_cache', False):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 def init_db():
     """Initialize the database with tables"""
@@ -666,10 +732,12 @@ def login_page():
         if session.get('role') == ROLE_MECHANIC:
             return redirect('/mechanic/dashboard')
         return redirect('/admin/dashboard')
-    logout_message = None
+    message = None
     if request.args.get('logged_out') == '1':
-        logout_message = 'You have been logged out successfully.'
-    return render_template('login.html', message=logout_message)
+        message = 'You have been logged out successfully.'
+    elif request.args.get('session_expired') == '1':
+        message = 'Your session has expired due to inactivity. Please log in again.'
+    return render_template('login.html', message=message)
 
 
 @app.route('/auth/login', methods=['POST'])
@@ -702,6 +770,7 @@ def login():
     session['role'] = user['role']
     session['name'] = user['name']
     session['mechanic_id'] = user['mechanic_id']
+    session['last_activity_at'] = _current_timestamp()
 
     if user['role'] == ROLE_MECHANIC:
         return redirect('/mechanic/dashboard')
