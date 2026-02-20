@@ -318,6 +318,34 @@ class CustomerBookingFlowTests(unittest.TestCase):
         self.assertIsNone(booking['confirmation_sms_last_error'])
         self.assertEqual(booking['confirmation_sms_attempt_count'], 1)
 
+    def test_send_sms_provider_not_configured_uses_safe_error_message(self):
+        booking_id = self._create_booking()
+
+        with mock.patch.object(
+            scheduler_app,
+            'get_sms_service',
+            side_effect=scheduler_app.SmsProviderError('PROVIDER_NOT_CONFIGURED', 'SMS provider not configured. Contact administrator.'),
+        ):
+            response = self.client.post(f'/api/bookings/{booking_id}/send-confirmation-sms', json={})
+
+        self.assertEqual(response.status_code, 503)
+        payload = response.get_json()
+        self.assertFalse(payload['success'])
+        self.assertEqual(payload['errorCode'], 'PROVIDER_NOT_CONFIGURED')
+        self.assertEqual(payload['message'], 'SMS service is currently unavailable.')
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT confirmation_sms_status, confirmation_sms_last_error FROM bookings WHERE id = ?',
+            (booking_id,),
+        )
+        booking = cursor.fetchone()
+        conn.close()
+
+        self.assertEqual(booking['confirmation_sms_status'], 'FAILED')
+        self.assertEqual(booking['confirmation_sms_last_error'], 'SMS service is currently unavailable.')
+
     def test_send_sms_provider_failure_sets_failed_fields(self):
         booking_id = self._create_booking()
 
