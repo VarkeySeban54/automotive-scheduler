@@ -303,14 +303,20 @@ class AuthRoleTests(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        invalid = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'completed'})
-        self.assertEqual(invalid.status_code, 400)
+        completed = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'completed'})
+        self.assertEqual(completed.status_code, 200)
+
+        revert = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'pending'})
+        self.assertEqual(revert.status_code, 200)
 
         in_progress = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'in_progress'})
         self.assertEqual(in_progress.status_code, 200)
 
-        completed = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'completed'})
-        self.assertEqual(completed.status_code, 200)
+        complete_again = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'completed'})
+        self.assertEqual(complete_again.status_code, 200)
+
+        duplicate_complete = self.client.put(f'/api/mechanic/jobs/{booking_id}/status', json={'status': 'completed'})
+        self.assertEqual(duplicate_complete.status_code, 400)
 
 if __name__ == '__main__':
     unittest.main()

@@ -74,6 +74,7 @@ ALL_TIME_SLOTS = [slot['label'] for slot in ALL_TIME_SLOT_DETAILS]
 
 NON_BLOCKING_BOOKING_STATUSES = ('cancelled', 'completed')
 BOOKING_STATUSES = {'pending', 'confirmed', 'in_progress', 'completed', 'cancelled'}
+BLOCKING_BOOKING_STATUSES = tuple(status for status in BOOKING_STATUSES if status not in NON_BLOCKING_BOOKING_STATUSES)
 
 DEFAULT_MECHANICS = [
     ('ajith-mathew', 'Ajith Mathew', 'ajith@autoshop.com', '555-0101', 'Engine & Transmission'),
@@ -924,6 +925,48 @@ def resolve_target_date(raw_date):
     return datetime.now().strftime('%Y-%m-%d')
 
 
+def booking_slots(booking):
+    start = _slot_label_to_minutes(booking['time_slot'])
+    duration = max(int(booking.get('duration_minutes') or SLOT_MINUTES), SLOT_MINUTES)
+    labels = []
+    for minutes in range(start, start + duration, SLOT_MINUTES):
+        label = _minutes_to_slot_label(minutes)
+        if label in ALL_TIME_SLOTS:
+            labels.append(label)
+    return labels
+
+
+def get_active_mechanic_ids(cursor):
+    cursor.execute(
+        '''
+        SELECT DISTINCT u.mechanic_id
+        FROM users u
+        INNER JOIN mechanics m ON m.mechanic_id = u.mechanic_id
+        WHERE LOWER(u.role) = ?
+          AND COALESCE(u.active, 0) = 1
+          AND u.mechanic_id IS NOT NULL
+          AND TRIM(u.mechanic_id) != ''
+        ORDER BY u.mechanic_id ASC
+        ''',
+        (ROLE_MECHANIC,),
+    )
+    return [row['mechanic_id'] for row in cursor.fetchall()]
+
+
+def is_valid_booking_status_transition(current_status, next_status):
+    if current_status == next_status:
+        return False
+
+    allowed_transitions = {
+        'pending': {'confirmed', 'in_progress', 'completed', 'cancelled'},
+        'confirmed': {'pending', 'in_progress', 'completed', 'cancelled'},
+        'in_progress': {'pending', 'completed', 'cancelled'},
+        'completed': {'pending'},
+        'cancelled': set(),
+    }
+    return next_status in allowed_transitions.get(current_status, set())
+
+
 def build_slot_availability(cursor, date, mechanic_id=None):
     """Build slot availability either for one mechanic or for total shop capacity."""
     cursor.execute('''
@@ -933,15 +976,8 @@ def build_slot_availability(cursor, date, mechanic_id=None):
     ''', (SLOT_MINUTES, date, *NON_BLOCKING_BOOKING_STATUSES))
     active_bookings = [dict(row) for row in cursor.fetchall()]
 
-    def booking_slots(booking):
-        start = _slot_label_to_minutes(booking['time_slot'])
-        duration = max(int(booking.get('duration_minutes') or SLOT_MINUTES), SLOT_MINUTES)
-        labels = []
-        for minutes in range(start, start + duration, SLOT_MINUTES):
-            label = _minutes_to_slot_label(minutes)
-            if label in ALL_TIME_SLOTS:
-                labels.append(label)
-        return labels
+    active_mechanic_ids = set(get_active_mechanic_ids(cursor))
+    capacity = len(active_mechanic_ids)
 
     if mechanic_id:
         booked_slots = set()
@@ -949,18 +985,24 @@ def build_slot_availability(cursor, date, mechanic_id=None):
             if booking['mechanic'] == mechanic_id:
                 booked_slots.update(booking_slots(booking))
 
+        booking_counts = {slot: 0 for slot in ALL_TIME_SLOTS}
+        for booking in active_bookings:
+            for slot in booking_slots(booking):
+                booking_counts[slot] = booking_counts.get(slot, 0) + 1
+
         return [
             {
                 'time': slot,
-                'available': slot not in booked_slots,
-                'remainingCapacity': 1 if slot not in booked_slots else 0,
-                'available_mechanics': 1 if slot not in booked_slots else 0
+                'available': (
+                    mechanic_id in active_mechanic_ids
+                    and slot not in booked_slots
+                    and max(capacity - booking_counts.get(slot, 0), 0) > 0
+                ),
+                'remainingCapacity': max(capacity - booking_counts.get(slot, 0), 0),
+                'available_mechanics': max(capacity - booking_counts.get(slot, 0), 0)
             }
             for slot in ALL_TIME_SLOTS
         ]
-
-    cursor.execute('SELECT COUNT(*) as count FROM mechanics')
-    mechanic_count = cursor.fetchone()['count']
 
     booking_counts = {slot: 0 for slot in ALL_TIME_SLOTS}
     for booking in active_bookings:
@@ -970,7 +1012,7 @@ def build_slot_availability(cursor, date, mechanic_id=None):
     slots = []
     for slot in ALL_TIME_SLOTS:
         booked_count = booking_counts.get(slot, 0)
-        free_count = max(mechanic_count - booked_count, 0)
+        free_count = max(capacity - booked_count, 0)
         slots.append({
             'time': slot,
             'available': free_count > 0,
@@ -1149,19 +1191,39 @@ def create_booking():
         conn.close()
         return jsonify({'success': False, 'error': 'Customer email already exists for another profile'}), 409
 
-    cursor.execute('''
-        SELECT time_slot, COALESCE(duration_minutes, ?) as duration_minutes FROM bookings
-        WHERE booking_date = ? AND mechanic = ? AND status NOT IN (?, ?)
-    ''', (SLOT_MINUTES, data['booking_date'], data['mechanic'], *NON_BLOCKING_BOOKING_STATUSES))
+    active_mechanic_ids = set(get_active_mechanic_ids(cursor))
+    if data['mechanic'] not in active_mechanic_ids:
+        conn.close()
+        return jsonify({'success': False, 'error': 'Assigned mechanic must be active'}), 400
+
+    capacity = len(active_mechanic_ids)
+    if capacity <= 0:
+        conn.close()
+        return jsonify({'success': False, 'error': 'No slots available for this time. Please select another time.'}), 409
+
+    cursor.execute(
+        '''
+        SELECT time_slot, COALESCE(duration_minutes, ?) as duration_minutes, mechanic
+        FROM bookings
+        WHERE booking_date = ? AND status NOT IN (?, ?)
+        ''',
+        (SLOT_MINUTES, data['booking_date'], *NON_BLOCKING_BOOKING_STATUSES),
+    )
+    active_bookings = [dict(row) for row in cursor.fetchall()]
 
     occupied_slots = set()
-    for row in cursor.fetchall():
-        row_start = _slot_label_to_minutes(row['time_slot'])
-        row_duration = max(int(row['duration_minutes'] or SLOT_MINUTES), SLOT_MINUTES)
-        for minutes in range(row_start, row_start + row_duration, SLOT_MINUTES):
-            slot_label = _minutes_to_slot_label(minutes)
-            if slot_label in ALL_TIME_SLOTS:
-                occupied_slots.add(slot_label)
+    slot_booking_counts = {slot: 0 for slot in ALL_TIME_SLOTS}
+    for booking in active_bookings:
+        expanded_slots = booking_slots(booking)
+        if booking['mechanic'] == data['mechanic']:
+            occupied_slots.update(expanded_slots)
+        for slot in expanded_slots:
+            slot_booking_counts[slot] = slot_booking_counts.get(slot, 0) + 1
+
+    for slot in requested_slots:
+        if slot_booking_counts.get(slot, 0) >= capacity:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No slots available for this time. Please select another time.'}), 409
 
     conflicting = [slot for slot in requested_slots if slot in occupied_slots]
     if conflicting:
@@ -1378,7 +1440,8 @@ def update_booking(booking_id):
     
     # Check if booking exists
     cursor.execute('SELECT * FROM bookings WHERE id = ?', (booking_id,))
-    if not cursor.fetchone():
+    existing_booking = cursor.fetchone()
+    if not existing_booking:
         conn.close()
         return jsonify({
             'success': False,
@@ -1399,6 +1462,9 @@ def update_booking(booking_id):
                 if normalized_status not in BOOKING_STATUSES:
                     conn.close()
                     return jsonify({'success': False, 'error': 'Invalid status'}), 400
+                if not is_valid_booking_status_transition(existing_booking['status'], normalized_status):
+                    conn.close()
+                    return jsonify({'success': False, 'error': 'Invalid status transition.'}), 400
                 update_fields.append('status = ?')
                 params.append(normalized_status)
                 continue
@@ -1564,7 +1630,17 @@ def get_mechanics():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM mechanics')
+    cursor.execute(
+        '''
+        SELECT m.*
+        FROM mechanics m
+        INNER JOIN users u ON u.mechanic_id = m.mechanic_id
+        WHERE LOWER(u.role) = ? AND COALESCE(u.active, 0) = 1
+        GROUP BY m.mechanic_id
+        ORDER BY m.name ASC
+        ''',
+        (ROLE_MECHANIC,),
+    )
     mechanics = [dict(row) for row in cursor.fetchall()]
     conn.close()
     
@@ -1656,14 +1732,14 @@ def update_mechanic_job_status(booking_id):
 
     current_status = booking['status']
     valid_transitions = {
-        'pending': {'in_progress'},
-        'in_progress': {'completed'},
-        'completed': set(),
+        'pending': {'in_progress', 'completed'},
+        'in_progress': {'completed', 'pending'},
+        'completed': {'pending'},
         'cancelled': set(),
     }
-    if new_status not in valid_transitions.get(current_status, set()):
+    if new_status == current_status or new_status not in valid_transitions.get(current_status, set()):
         conn.close()
-        return jsonify({'success': False, 'error': f'Cannot move status from {current_status} to {new_status}'}), 400
+        return jsonify({'success': False, 'error': 'Invalid status transition.'}), 400
 
     cursor.execute('UPDATE bookings SET status = ? WHERE id = ?', (new_status, booking_id))
 
