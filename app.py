@@ -105,6 +105,12 @@ class SmsProviderError(Exception):
         self.message = message
 
 
+def _public_sms_error_message(error_code, fallback_message):
+    if error_code == 'PROVIDER_NOT_CONFIGURED':
+        return 'SMS service is currently unavailable.'
+    return fallback_message
+
+
 class SmsService:
     provider_name = 'unknown'
 
@@ -1321,7 +1327,8 @@ def send_booking_confirmation_sms(booking_id):
             'status': SMS_STATUS_SENT,
         })
     except SmsProviderError as exc:
-        status_code = 500 if exc.code == 'PROVIDER_NOT_CONFIGURED' else 502
+        public_message = _public_sms_error_message(exc.code, exc.message)
+        status_code = 503 if exc.code == 'PROVIDER_NOT_CONFIGURED' else 502
         cursor.execute(
             '''
             UPDATE bookings
@@ -1329,18 +1336,19 @@ def send_booking_confirmation_sms(booking_id):
                 confirmation_sms_last_error = ?
             WHERE id = ?
             ''',
-            (SMS_STATUS_FAILED, exc.message, booking_id),
+            (SMS_STATUS_FAILED, public_message, booking_id),
         )
         conn.commit()
         app.logger.warning(
-            'sms_confirmation_failed booking_id=%s user_id=%s errorCode=%s to=%s',
+            'sms_confirmation_failed booking_id=%s user_id=%s errorCode=%s to=%s error=%s',
             booking_id,
             actor_user_id,
             exc.code,
             _mask_phone(to_e164),
+            exc.message,
         )
         conn.close()
-        return jsonify({'success': False, 'errorCode': exc.code, 'message': exc.message}), status_code
+        return jsonify({'success': False, 'errorCode': exc.code, 'message': public_message}), status_code
     except Exception:
         cursor.execute(
             '''
