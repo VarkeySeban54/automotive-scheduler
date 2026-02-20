@@ -593,6 +593,90 @@
             border: 1px solid #bbf7d0;
         }
 
+        .sms-section {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .sms-meta {
+            font-size: 0.84rem;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+
+        .sms-btn {
+            width: 100%;
+            border: none;
+            border-radius: 10px;
+            padding: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            background: #111827;
+            color: #f5cc1f;
+        }
+
+        .sms-btn:disabled {
+            background: #94a3b8;
+            color: white;
+            cursor: not-allowed;
+        }
+
+        .sms-toast {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            z-index: 60;
+            max-width: 360px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            color: white;
+            display: none;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.3);
+        }
+
+        .sms-toast.success { background: #166534; }
+        .sms-toast.error { background: #b91c1c; }
+
+        .sms-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 20px;
+        }
+
+        .sms-modal {
+            width: 100%;
+            max-width: 440px;
+            background: white;
+            border-radius: 12px;
+            padding: 18px;
+        }
+
+        .sms-modal h3 { margin-bottom: 8px; }
+        .sms-modal p { color: #475569; margin-bottom: 12px; }
+
+        .sms-modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .sms-modal-actions button {
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .sms-cancel { background: #e2e8f0; color: #334155; }
+        .sms-confirm { background: #111827; color: #f5cc1f; }
+
         @media (max-width: 1100px) {
             .main-container {
                 flex-direction: column;
@@ -835,9 +919,23 @@
         </div>
     </div>
 
+    <div id="smsToast" class="sms-toast" role="status" aria-live="polite"></div>
+
+    <div id="smsModalBackdrop" class="sms-modal-backdrop" role="dialog" aria-modal="true">
+        <div class="sms-modal">
+            <h3>Send confirmation SMS?</h3>
+            <p id="smsModalBody"></p>
+            <div class="sms-modal-actions">
+                <button class="sms-cancel" type="button" onclick="closeSmsModal()">Cancel</button>
+                <button id="smsConfirmButton" class="sms-confirm" type="button">Send</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // API Configuration
         const API_BASE_URL = '/api';
+        const CURRENT_ROLE = '{{ role }}';
         const RUNNING_FROM_LOCAL_FILE = window.location.protocol === 'file:';
 
         if (RUNNING_FROM_LOCAL_FILE) {
@@ -860,6 +958,9 @@
         let selectedCustomerId = null;
         let customerMode = 'new';
         let mechanicDirectory = {};
+        let lastBookings = [];
+        const sendingBookingIds = new Set();
+        let pendingSmsRequest = null;
         const vehicleCatalog = {
             'Toyota': ['Camry', 'Corolla', 'RAV4', 'Highlander', 'Tacoma', 'Prius'],
             'Honda': ['Civic', 'Accord', 'CR-V', 'Pilot', 'Odyssey', 'HR-V'],
@@ -1110,6 +1211,7 @@
                 }
 
                 renderTimeSlots(data.slots);
+                lastBookings = data.bookings || [];
                 displayBookings(data.bookings);
                 displayMechanicStats(data.stats);
                 displayMechanicCards(data.bookings);
@@ -1197,9 +1299,111 @@
                         <p><strong>Service:</strong> ${serviceNames[booking.service_type]}</p>
                         <p><strong>Mechanic:</strong> ${getMechanicName(booking.mechanic)}</p>
                         ${booking.description ? `<p><strong>Notes:</strong> ${booking.description}</p>` : ''}
+                        ${renderSmsSection(booking)}
                     </div>
                 </div>
             `).join('');
+        }
+
+        function renderSmsSection(booking) {
+            const canAccess = CURRENT_ROLE === 'admin' || CURRENT_ROLE === 'frontdesk';
+            if (!canAccess || !booking.phone) {
+                return '';
+            }
+
+            const status = booking.confirmation_sms_status || 'NOT_SENT';
+            const isSending = status === 'SENDING' || sendingBookingIds.has(booking.id);
+            const hasSent = status === 'SENT';
+            const buttonLabel = hasSent ? 'Resend Confirmation SMS' : 'Send Confirmation SMS';
+            const sentMeta = booking.confirmation_sms_sent_at
+                ? `Last sent: ${new Date(booking.confirmation_sms_sent_at).toLocaleString()}`
+                : 'Last sent: Never';
+            const errorMeta = booking.confirmation_sms_last_error ? ` • Last error: ${booking.confirmation_sms_last_error}` : '';
+
+            return `
+                <div class="sms-section">
+                    <div class="sms-meta">SMS status: ${status} • ${sentMeta}${errorMeta}</div>
+                    <button
+                        class="sms-btn"
+                        type="button"
+                        onclick="openSmsModal(${booking.id})"
+                        ${isSending ? 'disabled' : ''}
+                    >${isSending ? 'Sending...' : buttonLabel}</button>
+                </div>
+            `;
+        }
+
+        function maskPhone(rawPhone) {
+            const value = String(rawPhone || '');
+            if (value.length <= 4) return '*'.repeat(value.length);
+            return `${value.slice(0, 2)}${'*'.repeat(Math.max(value.length - 6, 0))}${value.slice(-4)}`;
+        }
+
+        function openSmsModal(bookingId) {
+            const booking = (lastBookings || []).find(item => item.id === bookingId);
+            if (!booking) {
+                showSmsToast('SMS failed: Booking data is stale. Reloading...', 'error');
+                loadDashboardData();
+                return;
+            }
+
+            const body = document.getElementById('smsModalBody');
+            const wasSent = booking.confirmation_sms_status === 'SENT' && booking.confirmation_sms_sent_at;
+            body.textContent = wasSent
+                ? `This SMS was last sent on ${new Date(booking.confirmation_sms_sent_at).toLocaleString()}. Send again to ${maskPhone(booking.phone)}?`
+                : `Send booking confirmation SMS to ${maskPhone(booking.phone)}?`;
+
+            pendingSmsRequest = {
+                bookingId,
+                forceResend: booking.confirmation_sms_status === 'SENT',
+            };
+            document.getElementById('smsConfirmButton').onclick = confirmSendSms;
+            document.getElementById('smsModalBackdrop').style.display = 'flex';
+        }
+
+        function closeSmsModal() {
+            pendingSmsRequest = null;
+            document.getElementById('smsModalBackdrop').style.display = 'none';
+        }
+
+        async function confirmSendSms() {
+            if (!pendingSmsRequest) return;
+
+            const { bookingId, forceResend } = pendingSmsRequest;
+            closeSmsModal();
+            sendingBookingIds.add(bookingId);
+            displayBookings(lastBookings);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/bookings/${bookingId}/send-confirmation-sms`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ forceResend })
+                });
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    const reason = data.message || 'Unable to send SMS.';
+                    showSmsToast(`SMS failed: ${reason}`, 'error');
+                } else {
+                    showSmsToast('Confirmation SMS sent successfully.', 'success');
+                }
+            } catch (error) {
+                showSmsToast('SMS failed: Unable to reach server.', 'error');
+            } finally {
+                sendingBookingIds.delete(bookingId);
+                await loadDashboardData();
+            }
+        }
+
+        function showSmsToast(message, type) {
+            const toast = document.getElementById('smsToast');
+            toast.textContent = message;
+            toast.className = `sms-toast ${type}`;
+            toast.style.display = 'block';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3500);
         }
         
         function getMechanicName(id) {

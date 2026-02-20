@@ -187,6 +187,37 @@ Content-Type: application/json
 }
 ```
 
+**Manually send booking confirmation SMS (admin/front desk)**
+```http
+POST /api/bookings/8/send-confirmation-sms
+Content-Type: application/json
+
+{
+  "forceResend": false
+}
+```
+
+Error codes include:
+- `BOOKING_NOT_FOUND`
+- `INVALID_PHONE`
+- `ALREADY_SENT`
+- `ALREADY_SENDING`
+- `PROVIDER_NOT_CONFIGURED`
+- `PROVIDER_ERROR`
+
+### SMS Environment Variables
+
+Set these values to enable outbound SMS:
+
+- `SMS_PROVIDER=twilio`
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_FROM_NUMBER`
+- `SHOP_NAME`
+- `SHOP_ADDRESS`
+- `DEFAULT_TIMEZONE` (example: `America/Toronto`)
+- `DEFAULT_COUNTRY` (example: `CA`)
+
 ### Statistics
 
 **Get dashboard stats**

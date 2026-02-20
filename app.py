@@ -5,10 +5,16 @@ import json
 import hashlib
 import hmac
 import secrets
+from zoneinfo import ZoneInfo
 
 from flask import Flask, request, jsonify, redirect, render_template, session, url_for
 from flask_cors import CORS
 from datetime import datetime, timedelta
+
+try:
+    import phonenumbers
+except ImportError:  # pragma: no cover - optional dependency fallback for constrained envs
+    phonenumbers = None
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend-backend communication
@@ -80,6 +86,63 @@ ROLE_ADMIN = 'admin'
 ROLE_FRONTDESK = 'frontdesk'
 ROLE_MECHANIC = 'mechanic'
 VALID_ROLES = {ROLE_ADMIN, ROLE_FRONTDESK, ROLE_MECHANIC}
+
+SMS_STATUS_NOT_SENT = 'NOT_SENT'
+SMS_STATUS_SENDING = 'SENDING'
+SMS_STATUS_SENT = 'SENT'
+SMS_STATUS_FAILED = 'FAILED'
+SMS_PROVIDER = os.environ.get('SMS_PROVIDER', 'twilio').strip().lower()
+DEFAULT_COUNTRY = os.environ.get('DEFAULT_COUNTRY', 'CA').strip().upper()
+DEFAULT_TIMEZONE = os.environ.get('DEFAULT_TIMEZONE', 'America/Toronto').strip()
+SHOP_NAME = os.environ.get('SHOP_NAME', 'Auto Shop').strip()
+SHOP_ADDRESS = os.environ.get('SHOP_ADDRESS', 'Address unavailable').strip()
+
+
+class SmsProviderError(Exception):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class SmsService:
+    provider_name = 'unknown'
+
+    def send_sms(self, to_e164, message):
+        raise NotImplementedError
+
+
+class TwilioSmsService(SmsService):
+    provider_name = 'twilio'
+
+    def __init__(self):
+        self.account_sid = (os.environ.get('TWILIO_ACCOUNT_SID') or '').strip()
+        self.auth_token = (os.environ.get('TWILIO_AUTH_TOKEN') or '').strip()
+        self.from_number = (os.environ.get('TWILIO_FROM_NUMBER') or '').strip()
+        if not self.account_sid or not self.auth_token or not self.from_number:
+            raise SmsProviderError('PROVIDER_NOT_CONFIGURED', 'SMS provider not configured. Contact administrator.')
+
+    def send_sms(self, to_e164, message):
+        try:
+            from twilio.rest import Client
+        except ImportError as exc:
+            raise SmsProviderError('PROVIDER_NOT_CONFIGURED', 'Twilio SDK is not installed on the server.') from exc
+
+        try:
+            client = Client(self.account_sid, self.auth_token)
+            response = client.messages.create(body=message, from_=self.from_number, to=to_e164)
+            return {
+                'provider_message_id': response.sid,
+                'raw_status': response.status,
+            }
+        except Exception as exc:
+            raise SmsProviderError('PROVIDER_ERROR', 'Unable to send SMS through provider.') from exc
+
+
+def get_sms_service():
+    if SMS_PROVIDER == 'twilio':
+        return TwilioSmsService()
+    raise SmsProviderError('PROVIDER_NOT_CONFIGURED', 'SMS provider not configured. Contact administrator.')
 
 DEFAULT_SYSTEM_USERS = [
     {
@@ -244,6 +307,22 @@ def init_db():
         cursor.execute("ALTER TABLE bookings ADD COLUMN customer_id INTEGER")
     if 'email' not in booking_columns:
         cursor.execute("ALTER TABLE bookings ADD COLUMN email TEXT")
+    if 'confirmation_sms_status' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN confirmation_sms_status TEXT DEFAULT 'NOT_SENT'")
+    if 'confirmation_sms_sent_at' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN confirmation_sms_sent_at TEXT")
+    if 'confirmation_sms_last_error' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN confirmation_sms_last_error TEXT")
+    if 'confirmation_sms_provider_message_id' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN confirmation_sms_provider_message_id TEXT")
+    if 'confirmation_sms_sent_by_user_id' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN confirmation_sms_sent_by_user_id INTEGER")
+    if 'confirmation_sms_attempt_count' not in booking_columns:
+        cursor.execute("ALTER TABLE bookings ADD COLUMN confirmation_sms_attempt_count INTEGER DEFAULT 0")
+
+    cursor.execute(
+        "UPDATE bookings SET confirmation_sms_status = 'NOT_SENT' WHERE confirmation_sms_status IS NULL OR TRIM(confirmation_sms_status) = ''"
+    )
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS booking_reminders (
@@ -384,6 +463,40 @@ def _normalize_phone(phone):
     return ''.join(ch for ch in (phone or '') if ch.isdigit())
 
 
+def _normalize_phone_to_e164(phone, default_region=DEFAULT_COUNTRY):
+    raw_phone = (phone or '').strip()
+    if not raw_phone:
+        raise ValueError('Customer phone number is required.')
+
+    stripped = raw_phone.replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+    if phonenumbers:
+        parsed = phonenumbers.parse(stripped, default_region or None)
+        if not phonenumbers.is_valid_number(parsed):
+            raise ValueError('Customer phone number is invalid.')
+
+        return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+
+    digits = ''.join(ch for ch in stripped if ch.isdigit())
+    if not digits:
+        raise ValueError('Customer phone number is invalid.')
+
+    if stripped.startswith('+') and 8 <= len(digits) <= 15:
+        return f'+{digits}'
+    if len(digits) == 10 and default_region in {'US', 'CA'}:
+        return f'+1{digits}'
+    if 8 <= len(digits) <= 15:
+        return f'+{digits}'
+    raise ValueError('Customer phone number is invalid.')
+
+
+def _mask_phone(phone):
+    if not phone:
+        return ''
+    if len(phone) <= 4:
+        return '*' * len(phone)
+    return f"{phone[:2]}{'*' * (len(phone) - 6)}{phone[-4:]}"
+
+
 def _normalize_active(value):
     if isinstance(value, bool):
         return 1 if value else 0
@@ -402,6 +515,32 @@ def _appointment_datetime(booking_date, time_slot):
     slot_minutes = _slot_label_to_minutes(time_slot)
     date_obj = datetime.strptime(booking_date, '%Y-%m-%d')
     return date_obj + timedelta(minutes=slot_minutes)
+
+
+def build_booking_confirmation_message(booking):
+    appointment_local = _appointment_datetime(booking['booking_date'], booking['time_slot']).replace(tzinfo=ZoneInfo(DEFAULT_TIMEZONE))
+    date_text = appointment_local.strftime('%b %d, %Y')
+    time_text = appointment_local.strftime('%I:%M %p').lstrip('0')
+    service = (booking['service_type'] or '').replace('-', ' ').title()
+    return (
+        f"Hi {booking['customer_name']}, your booking is confirmed at {SHOP_NAME}.\n"
+        f"Date: {date_text} Time: {time_text}\n"
+        f"Service: {service}\n"
+        f"Address: {SHOP_ADDRESS}\n"
+        "Reply STOP to unsubscribe."
+    )
+
+
+def _to_boolean(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'y'}
+    return default
 
 
 def _build_confirmation_token():
@@ -1083,6 +1222,141 @@ def get_booking(booking_id):
             'success': False,
             'error': 'Booking not found'
         }), 404
+
+
+@app.route('/api/bookings/<int:booking_id>/send-confirmation-sms', methods=['POST'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
+def send_booking_confirmation_sms(booking_id):
+    payload = request.json or {}
+    force_resend = _to_boolean(payload.get('forceResend'), default=False)
+    actor_user_id = session.get('user_id')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM bookings WHERE id = ?', (booking_id,))
+    booking = cursor.fetchone()
+    if not booking:
+        conn.close()
+        return jsonify({'success': False, 'errorCode': 'BOOKING_NOT_FOUND', 'message': 'Booking not found'}), 404
+
+    booking_dict = dict(booking)
+    try:
+        to_e164 = _normalize_phone_to_e164(booking_dict.get('phone'), DEFAULT_COUNTRY)
+    except ValueError:
+        conn.close()
+        return jsonify({'success': False, 'errorCode': 'INVALID_PHONE', 'message': 'Customer phone number is invalid'}), 400
+
+    if booking_dict.get('confirmation_sms_status') == SMS_STATUS_SENT and not force_resend:
+        conn.close()
+        return jsonify({'success': False, 'errorCode': 'ALREADY_SENT', 'message': 'Confirmation SMS already sent'}), 409
+
+    try:
+        cursor.execute('BEGIN IMMEDIATE')
+        cursor.execute(
+            '''
+            UPDATE bookings
+            SET confirmation_sms_status = ?,
+                confirmation_sms_attempt_count = COALESCE(confirmation_sms_attempt_count, 0) + 1,
+                confirmation_sms_last_error = NULL
+            WHERE id = ?
+              AND confirmation_sms_status != ?
+              AND NOT (confirmation_sms_status = ? AND ? = 0)
+            ''',
+            (SMS_STATUS_SENDING, booking_id, SMS_STATUS_SENDING, SMS_STATUS_SENT, 1 if force_resend else 0),
+        )
+
+        if cursor.rowcount == 0:
+            cursor.execute('SELECT confirmation_sms_status FROM bookings WHERE id = ?', (booking_id,))
+            status_row = cursor.fetchone()
+            conn.rollback()
+            conn.close()
+            status = (status_row['confirmation_sms_status'] if status_row else '') or ''
+            if status == SMS_STATUS_SENDING:
+                return jsonify({'success': False, 'errorCode': 'ALREADY_SENDING', 'message': 'Confirmation SMS is already sending'}), 409
+            return jsonify({'success': False, 'errorCode': 'ALREADY_SENT', 'message': 'Confirmation SMS already sent'}), 409
+
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        conn.close()
+        return jsonify({'success': False, 'errorCode': 'PROVIDER_ERROR', 'message': 'Unable to start SMS send'}), 502
+
+    try:
+        sms_service = get_sms_service()
+        message = build_booking_confirmation_message(booking_dict)
+        provider_result = sms_service.send_sms(to_e164, message)
+
+        sent_at = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        cursor.execute(
+            '''
+            UPDATE bookings
+            SET confirmation_sms_status = ?,
+                confirmation_sms_sent_at = ?,
+                confirmation_sms_provider_message_id = ?,
+                confirmation_sms_last_error = NULL,
+                confirmation_sms_sent_by_user_id = ?
+            WHERE id = ?
+            ''',
+            (SMS_STATUS_SENT, sent_at, provider_result.get('provider_message_id'), actor_user_id, booking_id),
+        )
+        conn.commit()
+
+        app.logger.info(
+            'sms_confirmation_sent booking_id=%s user_id=%s status=%s provider_message_id=%s to=%s',
+            booking_id,
+            actor_user_id,
+            SMS_STATUS_SENT,
+            provider_result.get('provider_message_id'),
+            _mask_phone(to_e164),
+        )
+
+        return jsonify({
+            'success': True,
+            'bookingId': booking_id,
+            'to': to_e164,
+            'provider': sms_service.provider_name,
+            'messageSid': provider_result.get('provider_message_id'),
+            'sentAt': sent_at,
+            'status': SMS_STATUS_SENT,
+        })
+    except SmsProviderError as exc:
+        status_code = 500 if exc.code == 'PROVIDER_NOT_CONFIGURED' else 502
+        cursor.execute(
+            '''
+            UPDATE bookings
+            SET confirmation_sms_status = ?,
+                confirmation_sms_last_error = ?
+            WHERE id = ?
+            ''',
+            (SMS_STATUS_FAILED, exc.message, booking_id),
+        )
+        conn.commit()
+        app.logger.warning(
+            'sms_confirmation_failed booking_id=%s user_id=%s errorCode=%s to=%s',
+            booking_id,
+            actor_user_id,
+            exc.code,
+            _mask_phone(to_e164),
+        )
+        conn.close()
+        return jsonify({'success': False, 'errorCode': exc.code, 'message': exc.message}), status_code
+    except Exception:
+        cursor.execute(
+            '''
+            UPDATE bookings
+            SET confirmation_sms_status = ?,
+                confirmation_sms_last_error = ?
+            WHERE id = ?
+            ''',
+            (SMS_STATUS_FAILED, 'Unable to send SMS through provider.', booking_id),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': False, 'errorCode': 'PROVIDER_ERROR', 'message': 'Unable to send SMS through provider.'}), 502
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route('/api/bookings/<int:booking_id>', methods=['PUT'])
