@@ -173,5 +173,93 @@ class CustomerBookingFlowTests(unittest.TestCase):
         self.assertIn('Selected customer does not exist', response.get_json()['error'])
 
 
+
+
+    def test_booking_creation_schedules_confirmation_reminder(self):
+        payload = {
+            'customer_mode': 'new',
+            'customer_name': 'Reminder User',
+            'phone': '555-444-6666',
+            'email': 'reminder@example.com',
+            'vehicle': 'Kia Soul',
+            'service_type': 'inspection',
+            'mechanic': 'ajith-mathew',
+            'time_slot': '9:00 AM',
+            'booking_date': '2099-01-05'
+        }
+
+        response = self.client.post('/api/bookings', json=payload)
+        self.assertEqual(response.status_code, 201)
+        booking_id = response.get_json()['booking_id']
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT booking_id, reminder_type, channel, status, confirmation_token FROM booking_reminders WHERE booking_id = ?',
+            (booking_id,),
+        )
+        reminder = cursor.fetchone()
+        conn.close()
+
+        self.assertIsNotNone(reminder)
+        self.assertEqual(reminder['booking_id'], booking_id)
+        self.assertEqual(reminder['reminder_type'], 'confirmation')
+        self.assertEqual(reminder['channel'], 'sms')
+        self.assertEqual(reminder['status'], 'pending')
+        self.assertTrue(reminder['confirmation_token'])
+
+    def test_process_and_confirm_reminder_flow(self):
+        payload = {
+            'customer_mode': 'new',
+            'customer_name': 'Confirm User',
+            'phone': '555-100-2000',
+            'email': 'confirm@example.com',
+            'vehicle': 'Hyundai Elantra',
+            'service_type': 'oil-change',
+            'mechanic': 'ajith-mathew',
+            'time_slot': '10:00 AM',
+            'booking_date': '2025-01-01'
+        }
+
+        create_response = self.client.post('/api/bookings', json=payload)
+        self.assertEqual(create_response.status_code, 201)
+        booking_id = create_response.get_json()['booking_id']
+
+        process_response = self.client.post('/api/reminders/process')
+        self.assertEqual(process_response.status_code, 200)
+        process_payload = process_response.get_json()
+        self.assertGreaterEqual(process_payload['count'], 1)
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT confirmation_token, status FROM booking_reminders WHERE booking_id = ? ORDER BY id DESC LIMIT 1',
+            (booking_id,),
+        )
+        reminder = cursor.fetchone()
+        conn.close()
+
+        self.assertEqual(reminder['status'], 'sent')
+        confirm_response = self.client.post(
+            f'/api/bookings/{booking_id}/confirm',
+            json={'token': reminder['confirmation_token']},
+        )
+        self.assertEqual(confirm_response.status_code, 200)
+
+        conn = scheduler_app.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT status FROM bookings WHERE id = ?', (booking_id,))
+        booking = cursor.fetchone()
+        cursor.execute(
+            'SELECT status, response_value FROM booking_reminders WHERE booking_id = ? ORDER BY id DESC LIMIT 1',
+            (booking_id,),
+        )
+        updated_reminder = cursor.fetchone()
+        conn.close()
+
+        self.assertEqual(booking['status'], 'confirmed')
+        self.assertEqual(updated_reminder['status'], 'responded')
+        self.assertEqual(updated_reminder['response_value'], 'confirmed')
+
 if __name__ == '__main__':
     unittest.main()

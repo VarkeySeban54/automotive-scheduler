@@ -67,6 +67,7 @@ ALL_TIME_SLOT_DETAILS = generate_time_slots(DAY_START, DAY_END, SLOT_MINUTES)
 ALL_TIME_SLOTS = [slot['label'] for slot in ALL_TIME_SLOT_DETAILS]
 
 NON_BLOCKING_BOOKING_STATUSES = ('cancelled', 'completed')
+BOOKING_STATUSES = {'pending', 'confirmed', 'in_progress', 'completed', 'cancelled'}
 
 DEFAULT_MECHANICS = [
     ('ajith-mathew', 'Ajith Mathew', 'ajith@autoshop.com', '555-0101', 'Engine & Transmission'),
@@ -244,6 +245,23 @@ def init_db():
     if 'email' not in booking_columns:
         cursor.execute("ALTER TABLE bookings ADD COLUMN email TEXT")
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS booking_reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            booking_id INTEGER NOT NULL,
+            reminder_type TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            scheduled_for TEXT NOT NULL,
+            sent_at TEXT,
+            status TEXT DEFAULT 'pending',
+            confirmation_token TEXT UNIQUE,
+            responded_at TEXT,
+            response_value TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (booking_id) REFERENCES bookings(id)
+        )
+    ''')
+
     cursor.execute('SELECT id, phone_number, email FROM customers')
     for row in cursor.fetchall():
         normalized_phone = _normalize_phone(row['phone_number'])
@@ -259,6 +277,8 @@ def init_db():
         ON customers(normalized_email)
         WHERE normalized_email IS NOT NULL
     ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_booking_reminders_status_schedule ON booking_reminders(status, scheduled_for)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_booking_reminders_booking_id ON booking_reminders(booking_id)')
     
     # Create mechanics table
     cursor.execute('''
@@ -376,6 +396,32 @@ def _normalize_active(value):
         if lowered in {'0', 'false', 'no', 'inactive'}:
             return 0
     return None
+
+
+def _appointment_datetime(booking_date, time_slot):
+    slot_minutes = _slot_label_to_minutes(time_slot)
+    date_obj = datetime.strptime(booking_date, '%Y-%m-%d')
+    return date_obj + timedelta(minutes=slot_minutes)
+
+
+def _build_confirmation_token():
+    return secrets.token_urlsafe(24)
+
+
+def _schedule_confirmation_reminder(cursor, booking_id, booking_date, time_slot):
+    appointment_at = _appointment_datetime(booking_date, time_slot)
+    reminder_at = appointment_at - timedelta(hours=24)
+    if reminder_at < datetime.now():
+        reminder_at = datetime.now()
+
+    cursor.execute(
+        '''
+        INSERT INTO booking_reminders
+            (booking_id, reminder_type, channel, scheduled_for, status, confirmation_token)
+        VALUES (?, 'confirmation', 'sms', ?, 'pending', ?)
+        ''',
+        (booking_id, reminder_at.strftime('%Y-%m-%d %H:%M:%S'), _build_confirmation_token())
+    )
 
 
 def _find_customer_by_phone(cursor, phone):
@@ -1005,9 +1051,10 @@ def create_booking():
     ))
     
     booking_id = cursor.lastrowid
+    _schedule_confirmation_reminder(cursor, booking_id, data['booking_date'], data['time_slot'])
     conn.commit()
     conn.close()
-    
+
     return jsonify({
         'success': True,
         'message': 'Booking created successfully',
@@ -1065,6 +1112,14 @@ def update_booking(booking_id):
     
     for field in allowed_fields:
         if field in data:
+            if field == 'status':
+                normalized_status = (str(data[field]) or '').strip().lower()
+                if normalized_status not in BOOKING_STATUSES:
+                    conn.close()
+                    return jsonify({'success': False, 'error': 'Invalid status'}), 400
+                update_fields.append('status = ?')
+                params.append(normalized_status)
+                continue
             update_fields.append(f'{field} = ?')
             params.append(data[field])
     
@@ -1086,6 +1141,106 @@ def update_booking(booking_id):
         'success': True,
         'message': 'Booking updated successfully'
     })
+
+
+@app.route('/api/bookings/<int:booking_id>/confirm', methods=['POST'])
+def confirm_booking(booking_id):
+    payload = request.json or {}
+    token = (payload.get('token') or '').strip()
+    if not token:
+        return jsonify({'success': False, 'error': 'Confirmation token is required'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT status FROM bookings WHERE id = ?', (booking_id,))
+    booking = cursor.fetchone()
+    if not booking:
+        conn.close()
+        return jsonify({'success': False, 'error': 'Booking not found'}), 404
+
+    cursor.execute(
+        '''
+        SELECT id, status
+        FROM booking_reminders
+        WHERE booking_id = ? AND confirmation_token = ? AND reminder_type = 'confirmation'
+        ORDER BY id DESC
+        LIMIT 1
+        ''',
+        (booking_id, token),
+    )
+    reminder = cursor.fetchone()
+    if not reminder:
+        conn.close()
+        return jsonify({'success': False, 'error': 'Invalid confirmation token'}), 400
+
+    if booking['status'] == 'cancelled':
+        conn.close()
+        return jsonify({'success': False, 'error': 'Cannot confirm a cancelled booking'}), 400
+
+    cursor.execute("UPDATE bookings SET status = 'confirmed' WHERE id = ?", (booking_id,))
+    cursor.execute(
+        '''
+        UPDATE booking_reminders
+        SET status = 'responded', responded_at = CURRENT_TIMESTAMP, response_value = 'confirmed'
+        WHERE id = ?
+        ''',
+        (reminder['id'],),
+    )
+
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'message': 'Booking confirmed successfully'})
+
+
+@app.route('/api/reminders/process', methods=['POST'])
+@roles_required(ROLE_ADMIN, ROLE_FRONTDESK)
+def process_due_reminders():
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        '''
+        SELECT r.id, r.booking_id, r.channel, r.scheduled_for, r.confirmation_token,
+               b.customer_name, b.phone, b.booking_date, b.time_slot, b.status
+        FROM booking_reminders r
+        INNER JOIN bookings b ON b.id = r.booking_id
+        WHERE r.status = 'pending'
+          AND r.scheduled_for <= ?
+          AND b.status NOT IN ('cancelled', 'completed')
+        ORDER BY r.scheduled_for ASC
+        ''',
+        (now,),
+    )
+
+    due = [dict(row) for row in cursor.fetchall()]
+    processed = []
+    for reminder in due:
+        message = (
+            f"Reminder: {reminder['customer_name']}, please confirm your appointment on "
+            f"{reminder['booking_date']} at {reminder['time_slot']}. "
+            f"Use token {reminder['confirmation_token']} to confirm."
+        )
+        cursor.execute(
+            '''
+            UPDATE booking_reminders
+            SET status = 'sent', sent_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            ''',
+            (reminder['id'],),
+        )
+        processed.append({
+            'reminder_id': reminder['id'],
+            'booking_id': reminder['booking_id'],
+            'channel': reminder['channel'],
+            'phone': reminder['phone'],
+            'message': message,
+        })
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'processed': processed, 'count': len(processed)})
 
 
 @app.route('/api/bookings/<int:booking_id>', methods=['DELETE'])

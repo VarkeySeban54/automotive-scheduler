@@ -152,6 +152,41 @@ Returns:
 }
 ```
 
+
+### Reminders & Confirmation
+
+**Process due confirmation reminders**
+```http
+POST /api/reminders/process
+```
+
+Returns reminders that were marked as sent (simulated outbound SMS payload):
+```json
+{
+  "success": true,
+  "count": 1,
+  "processed": [
+    {
+      "reminder_id": 12,
+      "booking_id": 8,
+      "channel": "sms",
+      "phone": "555-123-4567",
+      "message": "Reminder: ..."
+    }
+  ]
+}
+```
+
+**Confirm booking from reminder token**
+```http
+POST /api/bookings/8/confirm
+Content-Type: application/json
+
+{
+  "token": "<confirmation-token>"
+}
+```
+
 ### Statistics
 
 **Get dashboard stats**
