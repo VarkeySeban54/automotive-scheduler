@@ -90,7 +90,7 @@ class CustomerBookingFlowTests(unittest.TestCase):
             'phone': '(555)3334444',
             'vehicle': 'Honda Accord',
             'service_type': 'brake-service',
-            'mechanic': 'alvin-antony',
+            'mechanic': 'ajith-mathew',
             'time_slot': '9:00 AM',
             'booking_date': '2026-02-21'
         }
@@ -164,7 +164,7 @@ class CustomerBookingFlowTests(unittest.TestCase):
             'phone': '(555)777-8888',
             'vehicle': 'Ford Escape',
             'service_type': 'oil-change',
-            'mechanic': 'alvin-antony',
+            'mechanic': 'ajith-mathew',
             'time_slot': '9:00 AM',
             'booking_date': '2026-02-23'
         }
@@ -278,6 +278,19 @@ class CustomerBookingFlowTests(unittest.TestCase):
         self.assertEqual(booking['status'], 'confirmed')
         self.assertEqual(updated_reminder['status'], 'responded')
         self.assertEqual(updated_reminder['response_value'], 'confirmed')
+
+    def test_booking_status_transition_rules_for_complete_and_revert(self):
+        booking_id = self._create_booking(phone='555-222-3333')
+
+        complete = self.client.put(f'/api/bookings/{booking_id}', json={'status': 'completed'})
+        self.assertEqual(complete.status_code, 200)
+
+        duplicate = self.client.put(f'/api/bookings/{booking_id}', json={'status': 'completed'})
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertEqual(duplicate.get_json()['error'], 'Invalid status transition.')
+
+        revert = self.client.put(f'/api/bookings/{booking_id}', json={'status': 'pending'})
+        self.assertEqual(revert.status_code, 200)
 
     def test_send_sms_success_sets_sent_fields(self):
         booking_id = self._create_booking()
